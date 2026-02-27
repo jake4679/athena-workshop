@@ -585,6 +585,10 @@
       const refreshSchemaBtn = document.getElementById('refreshSchemaBtn');
       const toggleSchemaBtn = document.getElementById('toggleSchemaBtn');
 
+      function isSubmitShortcut(event) {
+        return event.key === 'Enter' && (event.ctrlKey || event.metaKey);
+      }
+
       function getEditorValue() {
         if (fallbackMode) {
           return fallbackEditorEl.value;
@@ -1315,6 +1319,14 @@
         }
       });
 
+      fallbackEditorEl.addEventListener('keydown', (event) => {
+        if (!isSubmitShortcut(event)) {
+          return;
+        }
+        event.preventDefault();
+        submitBtn.click();
+      });
+
       metaNameEl.addEventListener('blur', () => {
         saveQueryNameIfChanged().catch((error) => {
           renderStatus(`Failed to save query name: ${error.message}`, true);
@@ -1406,6 +1418,9 @@
           setSchemaCollapsed(schemaCollapsed);
           setQueryListCollapsed(queryListCollapsed);
           setupMonacoEnhancements();
+          editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+            submitBtn.click();
+          });
           scheduleValidation();
           refreshQueryList(selectedQueryId)
             .then(async () => {
