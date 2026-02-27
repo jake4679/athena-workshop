@@ -128,6 +128,46 @@ class AthenaService {
       tables
     };
   }
+
+  async validateQuery(queryText, options = {}) {
+    const timeoutMs = options.timeoutMs || 15000;
+    const pollIntervalMs = options.pollIntervalMs || 750;
+    const explainQuery = `EXPLAIN ${queryText}`;
+    const athenaQueryExecutionId = await this.submitQuery(explainQuery);
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const execution = await this.getExecutionState(athenaQueryExecutionId);
+      if (execution.state === 'SUCCEEDED') {
+        return {
+          valid: true,
+          athenaQueryExecutionId
+        };
+      }
+
+      if (execution.state === 'FAILED' || execution.state === 'CANCELLED') {
+        return {
+          valid: false,
+          athenaQueryExecutionId,
+          error: execution.reason || `Validation ended in state: ${execution.state}`
+        };
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+
+    try {
+      await this.cancelQuery(athenaQueryExecutionId);
+    } catch (_error) {
+      // best effort only
+    }
+
+    return {
+      valid: false,
+      athenaQueryExecutionId,
+      error: 'Validation timed out'
+    };
+  }
 }
 
 module.exports = {

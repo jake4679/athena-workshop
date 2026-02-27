@@ -127,6 +127,14 @@ request GET "$BASE_URL/schema"
 assert_status 200 "schema endpoint"
 assert_jq_eq '(.tables | type)' 'array' "schema tables payload type"
 
+request POST "$BASE_URL/query/validate" '{"query":"SELECT current_timestamp"}'
+assert_status 200 "query validate endpoint (valid)"
+assert_jq_eq '.valid | tostring' 'true' "query validate valid flag"
+
+request POST "$BASE_URL/query/validate" '{"query":"SELEC FROM"}'
+assert_status 200 "query validate endpoint (invalid)"
+assert_jq_eq '.valid | tostring' 'false' "query validate invalid flag"
+
 BODY1=$(jq -nc --arg q "$QUERY1_SQL" '{query: $q}')
 request POST "$BASE_URL/query" "$BODY1"
 assert_status 202 "create query #1"

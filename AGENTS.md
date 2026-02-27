@@ -6,6 +6,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 ## API Requirements
 - `GET /schema`: list Athena tables and their columns/types for the configured database.
 - `POST /query`: submit query from JSON body (`query`), generate and return identifier.
+- `POST /query/validate`: validate SQL syntax using Athena `EXPLAIN`; returns markers suitable for editor diagnostics.
 - `GET /query`: list all queries and their metadata.
 - `PUT /query/:identifier`: update query `name` and/or query body (`query`).
 - `DELETE /query/:identifier`: delete query metadata and any local downloaded results.
@@ -60,6 +61,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - JSON logger includes timestamp/level/file/line/message.
 - Config loaded from `--config <path>`.
 - Static frontend served from `/` with Monaco SQL editor, SQL format action, submit, polling, and results view.
+- Monaco editor uses schema-aware autocomplete (keywords/tables/columns) and debounced backend validation markers.
 - Frontend includes right-side query list populated from `/query`; selecting an item loads SQL and associated state/results.
 - Right-side query list includes delete control for selected query and clears UI state after deletion.
 - Results metadata panel includes `name` alongside Query ID/Status/timestamps.

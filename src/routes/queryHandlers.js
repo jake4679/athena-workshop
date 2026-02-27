@@ -40,6 +40,45 @@ function rowsToObjects(rows, columns) {
   });
 }
 
+function buildValidationMarkers(errorMessage) {
+  if (!errorMessage) {
+    return [];
+  }
+
+  const lineColonMatch = errorMessage.match(/line\\s+(\\d+)\\s*:\\s*(\\d+)/i);
+  if (lineColonMatch) {
+    return [
+      {
+        message: errorMessage,
+        line: Number(lineColonMatch[1]),
+        column: Number(lineColonMatch[2]) + 1,
+        severity: 'error'
+      }
+    ];
+  }
+
+  const lineColumnMatch = errorMessage.match(/line\\s+(\\d+)\\s*,\\s*column\\s+(\\d+)/i);
+  if (lineColumnMatch) {
+    return [
+      {
+        message: errorMessage,
+        line: Number(lineColumnMatch[1]),
+        column: Number(lineColumnMatch[2]),
+        severity: 'error'
+      }
+    ];
+  }
+
+  return [
+    {
+      message: errorMessage,
+      line: 1,
+      column: 1,
+      severity: 'error'
+    }
+  ];
+}
+
 function notFoundResponse(res, id) {
   return res.status(404).json({
     error: 'QUERY_NOT_FOUND',
@@ -141,6 +180,42 @@ function getSchemaHandler({ services }) {
       return res.status(500).json({
         error: 'SCHEMA_LOOKUP_FAILED',
         message: 'Failed to fetch Athena table schema'
+      });
+    }
+  };
+}
+
+function validateQueryHandler({ services }) {
+  return async function validateQuery(req, res) {
+    try {
+      const queryText = req.body?.query;
+      if (!queryText || typeof queryText !== 'string') {
+        return res.status(400).json({
+          error: 'INVALID_REQUEST',
+          message: 'Request body must include string field: query'
+        });
+      }
+
+      const validation = await services.validateQuery(queryText);
+      if (validation.valid) {
+        return res.status(200).json({
+          valid: true,
+          markers: [],
+          athenaQueryExecutionId: validation.athenaQueryExecutionId
+        });
+      }
+
+      const markers = buildValidationMarkers(validation.error);
+      return res.status(200).json({
+        valid: false,
+        markers,
+        error: validation.error || 'Validation failed',
+        athenaQueryExecutionId: validation.athenaQueryExecutionId
+      });
+    } catch (_error) {
+      return res.status(500).json({
+        error: 'QUERY_VALIDATE_FAILED',
+        message: 'Failed to validate query'
       });
     }
   };
@@ -437,6 +512,7 @@ module.exports = {
   createQueryHandler,
   updateQueryHandler,
   getSchemaHandler,
+  validateQueryHandler,
   getQueryListHandler,
   getQueryStatusHandler,
   getQueryResultsHandler,

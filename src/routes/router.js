@@ -3,6 +3,7 @@ const {
   createQueryHandler,
   updateQueryHandler,
   getSchemaHandler,
+  validateQueryHandler,
   getQueryListHandler,
   getQueryStatusHandler,
   getQueryResultsHandler,
@@ -22,6 +23,7 @@ function buildRouter(context) {
 
   router.get('/schema', getSchemaHandler(context));
   router.post('/query', createQueryHandler(context));
+  router.post('/query/validate', validateQueryHandler(context));
   router.get('/query', getQueryListHandler(context));
   router.put('/query/:id', updateQueryHandler(context));
   router.get('/query/:id/status', getQueryStatusHandler(context));

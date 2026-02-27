@@ -455,7 +455,6 @@
               <div id="editor"></div>
               <textarea id="editorFallback" aria-label="SQL editor fallback"></textarea>
               <div class="controls">
-                <button id="formatBtn" class="btn-light" type="button">Format SQL</button>
                 <button id="submitBtn" class="btn-accent" type="button">Submit Query</button>
               </div>
               <div id="status" class="status-strip">Idle</div>
@@ -536,14 +535,24 @@
       let selectedQueryId = null;
       let schemaCollapsed = false;
       let queryListCollapsed = false;
+      let schemaCache = { tables: [] };
+      let validateTimer = null;
+      let completionProviderRegistered = false;
+      const VALIDATION_DEBOUNCE_MS = 650;
       const DEFAULT_PAGE_SIZE = 25;
+      const SQL_KEYWORDS = [
+        'SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'LIMIT', 'OFFSET', 'JOIN', 'LEFT JOIN',
+        'RIGHT JOIN', 'INNER JOIN', 'FULL JOIN', 'ON', 'WITH', 'AS', 'DISTINCT', 'HAVING',
+        'UNION', 'UNION ALL', 'INSERT', 'UPDATE', 'DELETE', 'CREATE TABLE', 'DROP TABLE',
+        'ALTER TABLE', 'EXPLAIN', 'SHOW TABLES', 'DESCRIBE', 'CAST', 'CASE', 'WHEN', 'THEN',
+        'ELSE', 'END', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'BETWEEN', 'IS NULL', 'IS NOT NULL'
+      ];
 
       const appLayoutEl = document.getElementById('appLayout');
       const statusEl = document.getElementById('status');
       const resultsEl = document.getElementById('resultsView');
       const tabularViewEl = document.getElementById('tabularView');
       const submitBtn = document.getElementById('submitBtn');
-      const formatBtn = document.getElementById('formatBtn');
       const fallbackEditorEl = document.getElementById('editorFallback');
       const metaNameEl = document.getElementById('metaName');
       const metaQueryIdEl = document.getElementById('metaQueryId');
@@ -801,6 +810,132 @@
         return { ok: response.ok, status: response.status, json };
       }
 
+      function buildCompletionSuggestions(monacoApi, position, model) {
+        const word = model.getWordUntilPosition(position);
+        const range = {
+          startLineNumber: position.lineNumber,
+          endLineNumber: position.lineNumber,
+          startColumn: word.startColumn,
+          endColumn: word.endColumn
+        };
+
+        const suggestions = [];
+        SQL_KEYWORDS.forEach((keyword) => {
+          suggestions.push({
+            label: keyword,
+            kind: monacoApi.languages.CompletionItemKind.Keyword,
+            insertText: keyword,
+            range
+          });
+        });
+
+        const tables = Array.isArray(schemaCache.tables) ? schemaCache.tables : [];
+        tables.forEach((table) => {
+          suggestions.push({
+            label: table.name,
+            kind: monacoApi.languages.CompletionItemKind.Class,
+            insertText: table.name,
+            detail: 'table',
+            range
+          });
+
+          const columns = Array.isArray(table.columns) ? table.columns : [];
+          columns.forEach((column) => {
+            suggestions.push({
+              label: `${table.name}.${column.name}`,
+              kind: monacoApi.languages.CompletionItemKind.Field,
+              insertText: `${table.name}.${column.name}`,
+              detail: column.type || 'column',
+              range
+            });
+            suggestions.push({
+              label: column.name,
+              kind: monacoApi.languages.CompletionItemKind.Field,
+              insertText: column.name,
+              detail: `${table.name} (${column.type || 'column'})`,
+              range
+            });
+          });
+        });
+
+        return suggestions;
+      }
+
+      function setValidationMarkers(markers) {
+        if (!editor || typeof monaco === 'undefined') {
+          return;
+        }
+        const model = editor.getModel();
+        if (!model) {
+          return;
+        }
+
+        const mapped = (markers || []).map((marker) => ({
+          startLineNumber: Math.max(1, Number(marker.line || 1)),
+          startColumn: Math.max(1, Number(marker.column || 1)),
+          endLineNumber: Math.max(1, Number(marker.line || 1)),
+          endColumn: Math.max(2, Number(marker.column || 1) + 1),
+          message: marker.message || 'Syntax error',
+          severity: monaco.MarkerSeverity.Error
+        }));
+
+        monaco.editor.setModelMarkers(model, 'athena-validator', mapped);
+      }
+
+      async function runValidation() {
+        if (!editor) {
+          return;
+        }
+        const sql = getEditorValue().trim();
+        if (!sql) {
+          setValidationMarkers([]);
+          return;
+        }
+
+        const res = await apiRequest('/query/validate', 'POST', { query: sql });
+        if (!res.ok) {
+          return;
+        }
+
+        if (res.json.valid) {
+          setValidationMarkers([]);
+          return;
+        }
+
+        setValidationMarkers(Array.isArray(res.json.markers) ? res.json.markers : []);
+      }
+
+      function scheduleValidation() {
+        if (validateTimer) {
+          clearTimeout(validateTimer);
+          validateTimer = null;
+        }
+        validateTimer = setTimeout(() => {
+          runValidation().catch(() => {
+            // validation failures should not block editor usage
+          });
+        }, VALIDATION_DEBOUNCE_MS);
+      }
+
+      function setupMonacoEnhancements() {
+        if (!editor || completionProviderRegistered || typeof monaco === 'undefined') {
+          return;
+        }
+
+        monaco.languages.registerCompletionItemProvider('sql', {
+          triggerCharacters: ['.', ' '],
+          provideCompletionItems(model, position) {
+            return {
+              suggestions: buildCompletionSuggestions(monaco, position, model)
+            };
+          }
+        });
+        completionProviderRegistered = true;
+        editor.onDidChangeModelContent(() => {
+          scheduleValidation();
+        });
+      }
+
       function shortId(id) {
         if (!id || id.length < 12) {
           return id || '';
@@ -852,6 +987,9 @@
           schemaTreeEl.innerHTML = `<div class="meta-value">Failed to load schema (${res.status}).</div>`;
           return;
         }
+        schemaCache = {
+          tables: Array.isArray(res.json.tables) ? res.json.tables : []
+        };
         renderSchemaTree(res.json);
       }
 
@@ -1106,16 +1244,6 @@
         }
       });
 
-      formatBtn.addEventListener('click', () => {
-        try {
-          const formatted = window.sqlFormatter.format(getEditorValue(), { language: 'sql' });
-          setEditorValue(formatted);
-          renderStatus('SQL formatted.');
-        } catch (err) {
-          renderStatus(`Format failed: ${err.message}`, true);
-        }
-      });
-
       metaNameEl.addEventListener('blur', () => {
         saveQueryNameIfChanged().catch((error) => {
           renderStatus(`Failed to save query name: ${error.message}`, true);
@@ -1168,6 +1296,10 @@
 
       window.addEventListener('beforeunload', () => {
         clearPolling();
+        if (validateTimer) {
+          clearTimeout(validateTimer);
+          validateTimer = null;
+        }
         if (queryListTimer) {
           clearInterval(queryListTimer);
           queryListTimer = null;
@@ -1190,6 +1322,8 @@
             readOnly: false,
             domReadOnly: false
           });
+          setupMonacoEnhancements();
+          scheduleValidation();
           refreshQueryList().catch((error) => {
             renderStatus(`Failed to load query list: ${error.message}`, true);
           });

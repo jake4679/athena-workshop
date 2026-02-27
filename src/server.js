@@ -200,6 +200,10 @@ function createServices({ queryStore, athenaService, lockManager }) {
     return athenaService.listTableSchema();
   }
 
+  async function validateQuery(queryText) {
+    return athenaService.validateQuery(queryText);
+  }
+
   return {
     queryStore,
     createQuery,
@@ -207,6 +211,7 @@ function createServices({ queryStore, athenaService, lockManager }) {
     cancelQuery,
     deleteQuery,
     getSchema,
+    validateQuery,
     pollRunningQueries
   };
 }
