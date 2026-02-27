@@ -455,6 +455,7 @@
               <div id="editor"></div>
               <textarea id="editorFallback" aria-label="SQL editor fallback"></textarea>
               <div class="controls">
+                <button id="newQueryBtn" class="btn-light" type="button">New Query</button>
                 <button id="submitBtn" class="btn-accent" type="button">Submit Query</button>
               </div>
               <div id="status" class="status-strip">Idle</div>
@@ -539,6 +540,7 @@
       let validateTimer = null;
       let completionProviderRegistered = false;
       const VALIDATION_DEBOUNCE_MS = 650;
+      const UI_STATE_STORAGE_KEY = 'athena_query_console_ui_state_v1';
       const DEFAULT_PAGE_SIZE = 25;
       const SQL_KEYWORDS = [
         'SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'LIMIT', 'OFFSET', 'JOIN', 'LEFT JOIN',
@@ -552,6 +554,7 @@
       const statusEl = document.getElementById('status');
       const resultsEl = document.getElementById('resultsView');
       const tabularViewEl = document.getElementById('tabularView');
+      const newQueryBtn = document.getElementById('newQueryBtn');
       const submitBtn = document.getElementById('submitBtn');
       const fallbackEditorEl = document.getElementById('editorFallback');
       const metaNameEl = document.getElementById('metaName');
@@ -947,12 +950,14 @@
         schemaCollapsed = Boolean(nextCollapsed);
         appLayoutEl.classList.toggle('left-collapsed', schemaCollapsed);
         toggleSchemaBtn.textContent = schemaCollapsed ? '>' : '<';
+        persistUiState();
       }
 
       function setQueryListCollapsed(nextCollapsed) {
         queryListCollapsed = Boolean(nextCollapsed);
         appLayoutEl.classList.toggle('right-collapsed', queryListCollapsed);
         toggleQueryListBtn.textContent = queryListCollapsed ? '<' : '>';
+        persistUiState();
       }
 
       function renderSchemaTree(schema) {
@@ -995,6 +1000,43 @@
 
       function setSelectedQuery(id) {
         selectedQueryId = id;
+        persistUiState();
+      }
+
+      function persistUiState() {
+        try {
+          window.localStorage.setItem(
+            UI_STATE_STORAGE_KEY,
+            JSON.stringify({
+              schemaCollapsed,
+              queryListCollapsed,
+              selectedQueryId
+            })
+          );
+        } catch (_error) {
+          // ignore local storage failures
+        }
+      }
+
+      function restoreUiState() {
+        try {
+          const raw = window.localStorage.getItem(UI_STATE_STORAGE_KEY);
+          if (!raw) {
+            return;
+          }
+          const state = JSON.parse(raw);
+          if (typeof state.schemaCollapsed === 'boolean') {
+            schemaCollapsed = state.schemaCollapsed;
+          }
+          if (typeof state.queryListCollapsed === 'boolean') {
+            queryListCollapsed = state.queryListCollapsed;
+          }
+          if (typeof state.selectedQueryId === 'string' && state.selectedQueryId.trim() !== '') {
+            selectedQueryId = state.selectedQueryId;
+          }
+        } catch (_error) {
+          // ignore malformed state
+        }
       }
 
       function renderQueryList(queries) {
@@ -1032,9 +1074,9 @@
 
         const queries = Array.isArray(res.json.queries) ? res.json.queries : [];
         if (preferSelectId) {
-          selectedQueryId = preferSelectId;
+          setSelectedQuery(preferSelectId);
         } else if (selectedQueryId && !queries.find((q) => q.id === selectedQueryId)) {
-          selectedQueryId = null;
+          setSelectedQuery(null);
         }
 
         renderQueryList(queries);
@@ -1112,7 +1154,7 @@
       }
 
       function clearSelectedQueryView() {
-        selectedQueryId = null;
+        setSelectedQuery(null);
         setMetaFields({
           name: '',
           queryId: '-',
@@ -1201,15 +1243,30 @@
           return;
         }
 
-        if (!selectedQueryId) {
-          renderStatus('Select an existing query from the right list before submitting.', true);
-          return;
-        }
-
         submitBtn.disabled = true;
         renderStatus('Submitting query...');
 
         try {
+          if (!selectedQueryId) {
+            const createRes = await apiRequest('/query', 'POST', { query: sql });
+            if (!createRes.ok) {
+              renderStatus(
+                `Create failed (${createRes.status}): ${createRes.json.message || 'unknown error'}`,
+                true
+              );
+              renderJson(createRes.json);
+              return;
+            }
+
+            const id = createRes.json.id;
+            setSelectedQuery(id);
+            renderStatus(`Query submitted: ${id}`);
+            renderJson({ message: `Query ${id} submitted. Waiting for results...` });
+            await refreshQueryList(id);
+            startPolling(id);
+            return;
+          }
+
           const updateRes = await apiRequest(`/query/${selectedQueryId}`, 'PUT', { query: sql });
           if (!updateRes.ok) {
             renderStatus(
@@ -1248,6 +1305,15 @@
         saveQueryNameIfChanged().catch((error) => {
           renderStatus(`Failed to save query name: ${error.message}`, true);
         });
+      });
+
+      newQueryBtn.addEventListener('click', () => {
+        clearPolling();
+        clearSelectedQueryView();
+        refreshQueryList().catch((error) => {
+          renderStatus(`Failed to refresh query list: ${error.message}`, true);
+        });
+        renderStatus('Started a new query draft.', false);
       });
 
       refreshListBtn.addEventListener('click', () => {
@@ -1322,11 +1388,20 @@
             readOnly: false,
             domReadOnly: false
           });
+          restoreUiState();
+          setSchemaCollapsed(schemaCollapsed);
+          setQueryListCollapsed(queryListCollapsed);
           setupMonacoEnhancements();
           scheduleValidation();
-          refreshQueryList().catch((error) => {
-            renderStatus(`Failed to load query list: ${error.message}`, true);
-          });
+          refreshQueryList(selectedQueryId)
+            .then(async () => {
+              if (selectedQueryId) {
+                await loadQueryById(selectedQueryId);
+              }
+            })
+            .catch((error) => {
+              renderStatus(`Failed to load query list: ${error.message}`, true);
+            });
           refreshSchemaTree().catch((error) => {
             renderStatus(`Failed to load schema: ${error.message}`, true);
           });
@@ -1338,9 +1413,18 @@
         },
         () => {
           enableFallbackEditor('SELECT current_timestamp AS ts;');
-          refreshQueryList().catch((error) => {
-            renderStatus(`Failed to load query list: ${error.message}`, true);
-          });
+          restoreUiState();
+          setSchemaCollapsed(schemaCollapsed);
+          setQueryListCollapsed(queryListCollapsed);
+          refreshQueryList(selectedQueryId)
+            .then(async () => {
+              if (selectedQueryId) {
+                await loadQueryById(selectedQueryId);
+              }
+            })
+            .catch((error) => {
+              renderStatus(`Failed to load query list: ${error.message}`, true);
+            });
           refreshSchemaTree().catch((error) => {
             renderStatus(`Failed to load schema: ${error.message}`, true);
           });
