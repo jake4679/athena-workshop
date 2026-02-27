@@ -171,12 +171,22 @@ function getQueryListHandler({ services }) {
   };
 }
 
-function getSchemaHandler({ services }) {
+function getSchemaHandler({ services, logger }) {
   return async function getSchema(_req, res) {
+    logger.info('Schema refresh requested');
+
     try {
       const schema = await services.getSchema();
+      logger.info('Schema refresh succeeded', {
+        tableCount: Array.isArray(schema?.tables) ? schema.tables.length : 0,
+        catalog: schema?.catalog || null,
+        database: schema?.database || null
+      });
       return res.status(200).json(schema);
-    } catch (_error) {
+    } catch (error) {
+      logger.error('Schema refresh failed', {
+        error: error.message
+      });
       return res.status(500).json({
         error: 'SCHEMA_LOOKUP_FAILED',
         message: 'Failed to fetch Athena table schema'

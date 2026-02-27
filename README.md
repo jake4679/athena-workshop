@@ -4,6 +4,8 @@ Minimal Node.js HTTP service for submitting and managing AWS Athena queries.
 
 ## Setup
 1. Copy `config.example.json` to `config.json` and set real values.
+   - If you use named AWS CLI profiles or IAM Identity Center (SSO), set `aws.profile` in config to force the Node process to use the same profile.
+   - When `aws.profile` is set, server startup clears `AWS_ACCESS_KEY_ID`/`AWS_SESSION_TOKEN` env credentials so stale env tokens cannot override profile-based auth.
 2. Install dependencies:
    ```bash
    npm install

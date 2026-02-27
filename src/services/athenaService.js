@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const logger = require('../utils/logger');
 const {
   AthenaClient,
   StartQueryExecutionCommand,
@@ -97,31 +98,56 @@ class AthenaService {
   }
 
   async listTableSchema() {
+    logger.info('Listing Athena table schema', {
+      catalog: this.catalog,
+      database: this.database
+    });
+
     const tables = [];
     let nextToken;
+    let pageCount = 0;
 
-    do {
-      const cmd = new ListTableMetadataCommand({
-        CatalogName: this.catalog,
-        DatabaseName: this.database,
-        NextToken: nextToken,
-        MaxResults: 50
+    try {
+      do {
+        const cmd = new ListTableMetadataCommand({
+          CatalogName: this.catalog,
+          DatabaseName: this.database,
+          NextToken: nextToken,
+          MaxResults: 50
+        });
+        const res = await this.client.send(cmd);
+        nextToken = res.NextToken;
+        pageCount += 1;
+
+        const pageTables = (res.TableMetadataList || []).map((table) => ({
+          name: table.Name,
+          columns: (table.Columns || []).map((column) => ({
+            name: column.Name,
+            type: column.Type || 'unknown'
+          }))
+        }));
+
+        tables.push(...pageTables);
+      } while (nextToken);
+    } catch (error) {
+      logger.error('Athena schema listing failed', {
+        catalog: this.catalog,
+        database: this.database,
+        pageCount,
+        error: error.message,
+        errorName: error.name || null
       });
-      const res = await this.client.send(cmd);
-      nextToken = res.NextToken;
-
-      const pageTables = (res.TableMetadataList || []).map((table) => ({
-        name: table.Name,
-        columns: (table.Columns || []).map((column) => ({
-          name: column.Name,
-          type: column.Type || 'unknown'
-        }))
-      }));
-
-      tables.push(...pageTables);
-    } while (nextToken);
+      throw error;
+    }
 
     tables.sort((a, b) => a.name.localeCompare(b.name));
+    logger.info('Athena schema listing completed', {
+      catalog: this.catalog,
+      database: this.database,
+      pageCount,
+      tableCount: tables.length
+    });
+
     return {
       catalog: this.catalog,
       database: this.database,
