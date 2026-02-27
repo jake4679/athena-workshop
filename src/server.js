@@ -17,6 +17,7 @@ function createServices({ queryStore, athenaService, lockManager }) {
 
     const created = await queryStore.create({
       id,
+      name: id,
       queryText,
       athenaQueryExecutionId,
       status: 'RUNNING'
@@ -80,6 +81,35 @@ function createServices({ queryStore, athenaService, lockManager }) {
 
       logger.info('Query cancelled', { id });
       return cancelled;
+    });
+  }
+
+  async function deleteQuery(id) {
+    return lockManager.runWithLock(id, async () => {
+      const existing = await queryStore.getById(id);
+      if (!existing) {
+        return { error: 'NOT_FOUND' };
+      }
+
+      if (existing.status === 'RUNNING') {
+        try {
+          await athenaService.cancelQuery(existing.athenaQueryExecutionId);
+        } catch (error) {
+          logger.warn('Athena cancel before delete failed', {
+            id,
+            athenaQueryExecutionId: existing.athenaQueryExecutionId,
+            error: error.message
+          });
+        }
+      }
+
+      if (existing.resultPath && fs.existsSync(existing.resultPath)) {
+        fs.unlinkSync(existing.resultPath);
+      }
+
+      await queryStore.deleteById(id);
+      logger.info('Query deleted', { id });
+      return { id };
     });
   }
 
@@ -166,11 +196,17 @@ function createServices({ queryStore, athenaService, lockManager }) {
     logger.info('Poll cycle finished', { checkedQueryCount: running.length });
   }
 
+  async function getSchema() {
+    return athenaService.listTableSchema();
+  }
+
   return {
     queryStore,
     createQuery,
     refreshQuery,
     cancelQuery,
+    deleteQuery,
+    getSchema,
     pollRunningQueries
   };
 }
@@ -190,6 +226,7 @@ async function startServer() {
 
   const app = express();
   app.use(express.json());
+  app.use(express.static(path.resolve(__dirname, "../public")));
 
   app.get('/health', (_req, res) => {
     res.status(200).json({ status: 'ok' });

@@ -19,16 +19,39 @@ node src/server.js --config ./config.json --port 4000
 ```
 
 ## Endpoints
+- `GET /schema` (Athena database tables and columns/types)
 - `POST /query` body: `{ "query": "SELECT ..." }`
+- `GET /query`
+- `PUT /query/:id` body: `{ "name": "Friendly name", "query": "SELECT ..." }` (either field may be provided)
+- `DELETE /query/:id` (removes query metadata and any local stored results)
 - `GET /query/:id/status`
 - `GET /query/:id/results`
+- Pagination on results: `GET /query/:id/results?limit=25&offset=0` or `GET /query/:id/results?page=1&size=25`
 - `POST /query/:id/refresh`
 - `POST /query/:id/cancel`
 - `GET /health`
+
+## Frontend
+- `GET /` serves a minimal HTML page with:
+- Monaco SQL editor
+- SQL formatting button
+- Query submit action
+- Live status polling
+- Query metadata panel
+- Tabulator table for tabular results with remote pagination
+- Right-side query list (`/query`) with click-to-load query text and available results
+- Right-side query list includes delete action for selected query
+- Query metadata includes editable `name` value from backend (defaulted to query ID on create)
+- Left-side collapsible Athena schema tree (tables -> columns with data types)
 
 ## Exercise Script
 ```bash
 ./scripts/exercise.sh http://localhost:3000
 ```
 
-`jq` is used by the script for pretty JSON output.
+`jq` is used by the script for assertions and JSON handling.
+You can override queries for testing large result sets:
+
+```bash
+PAGINATION_SQL='SELECT * FROM your_large_table' ./scripts/exercise.sh http://localhost:3000
+```

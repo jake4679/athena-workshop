@@ -2,6 +2,9 @@
 set -u -o pipefail
 
 BASE_URL="${1:-http://localhost:3000}"
+QUERY1_SQL="${QUERY1_SQL:-SELECT current_timestamp}"
+QUERY2_SQL="${QUERY2_SQL:-SELECT * FROM information_schema.tables}"
+PAGINATION_SQL="${PAGINATION_SQL:-SELECT * FROM information_schema.columns LIMIT 200}"
 FAILURES=0
 LAST_BODY=""
 LAST_STATUS=""
@@ -120,16 +123,38 @@ request GET "$BASE_URL/health"
 assert_status 200 "health endpoint"
 assert_jq_eq '.status' 'ok' "health payload"
 
-request POST "$BASE_URL/query" '{"query":"SELECT current_timestamp"}'
+request GET "$BASE_URL/schema"
+assert_status 200 "schema endpoint"
+assert_jq_eq '(.tables | type)' 'array' "schema tables payload type"
+
+BODY1=$(jq -nc --arg q "$QUERY1_SQL" '{query: $q}')
+request POST "$BASE_URL/query" "$BODY1"
 assert_status 202 "create query #1"
 assert_jq_nonempty '.id' "create query #1 id present"
 ID1=$(echo "$LAST_BODY" | jq -r '.id')
 assert_jq_eq '.status' 'RUNNING' "create query #1 initial status"
 
-request POST "$BASE_URL/query" '{"query":"SELECT * FROM information_schema.tables"}'
+BODY2=$(jq -nc --arg q "$QUERY2_SQL" '{query: $q}')
+request POST "$BASE_URL/query" "$BODY2"
 assert_status 202 "create query #2"
 assert_jq_nonempty '.id' "create query #2 id present"
 ID2=$(echo "$LAST_BODY" | jq -r '.id')
+
+request GET "$BASE_URL/query"
+assert_status 200 "query list endpoint"
+assert_jq_eq '(.queries | type)' 'array' "query list payload type"
+assert_jq_eq "([.queries[].id] | index(\"$ID1\") != null | tostring)" 'true' "query list contains query #1"
+assert_jq_eq "([.queries[].id] | index(\"$ID2\") != null | tostring)" 'true' "query list contains query #2"
+
+UPDATE1=$(jq -nc --arg name "exercise-query-1" --arg query "$QUERY1_SQL" '{name: $name, query: $query}')
+request PUT "$BASE_URL/query/$ID1" "$UPDATE1"
+assert_status 200 "update query #1 name/query"
+assert_jq_eq '.name' 'exercise-query-1' "update query #1 name applied"
+
+request GET "$BASE_URL/query/$ID1/status"
+assert_status 200 "status query #1 after update"
+assert_jq_eq '.name' 'exercise-query-1' "status query #1 name reflected"
+assert_jq_eq '.query' "$QUERY1_SQL" "status query #1 query reflected"
 
 request POST "$BASE_URL/query/$ID2/cancel" '{}'
 assert_status 202 "cancel query #2"
@@ -184,6 +209,50 @@ fi
 request GET "$BASE_URL/query/unknown-id/status"
 assert_status 404 "unknown query status"
 assert_jq_eq '.error' 'QUERY_NOT_FOUND' "unknown query status error"
+
+BODY3=$(jq -nc --arg q "$PAGINATION_SQL" '{query: $q}')
+request POST "$BASE_URL/query" "$BODY3"
+assert_status 202 "create query #3 for pagination"
+assert_jq_nonempty '.id' "create query #3 id present"
+ID3=$(echo "$LAST_BODY" | jq -r '.id')
+
+STATE3=$(wait_for_terminal_state "$ID3")
+if [[ "$STATE3" == "SUCCEEDED" ]]; then
+  pass "query #3 reached SUCCEEDED"
+else
+  fail "query #3 expected SUCCEEDED for pagination test, got '$STATE3'"
+fi
+
+request GET "$BASE_URL/query/$ID3/results?limit=5&offset=0"
+assert_status 200 "pagination query #3 first page by limit/offset"
+assert_jq_eq '.results.limit | tostring' '5' "pagination limit reflected"
+assert_jq_eq '.results.offset | tostring' '0' "pagination offset reflected"
+assert_jq_eq '(.data | type)' 'array' "pagination data array present"
+assert_jq_nonempty '.last_page' "pagination last_page present"
+
+request GET "$BASE_URL/query/$ID3/results?page=2&size=5"
+assert_status 200 "pagination query #3 second page by page/size"
+assert_jq_eq '.results.limit | tostring' '5' "page/size limit reflected"
+assert_jq_eq '.results.page | tostring' '2' "page/size page reflected"
+assert_jq_eq '(.data | type)' 'array' "page/size data array present"
+
+request GET "$BASE_URL/query/$ID3/results?limit=abc"
+assert_status 400 "invalid pagination rejected"
+assert_jq_eq '.error' 'INVALID_PAGINATION' "invalid pagination error code"
+
+BODY4=$(jq -nc --arg q "SELECT current_timestamp" '{query: $q}')
+request POST "$BASE_URL/query" "$BODY4"
+assert_status 202 "create query #4 for delete"
+assert_jq_nonempty '.id' "create query #4 id present"
+ID4=$(echo "$LAST_BODY" | jq -r '.id')
+
+request DELETE "$BASE_URL/query/$ID4"
+assert_status 200 "delete query #4"
+assert_jq_eq '.deleted | tostring' 'true' "delete query #4 flag"
+
+request GET "$BASE_URL/query/$ID4/status"
+assert_status 404 "deleted query #4 status not found"
+assert_jq_eq '.error' 'QUERY_NOT_FOUND' "deleted query #4 error code"
 
 if (( FAILURES == 0 )); then
   echo "EXERCISE RESULT: SUCCESS"

@@ -5,13 +5,15 @@ const {
   StartQueryExecutionCommand,
   GetQueryExecutionCommand,
   GetQueryResultsCommand,
-  StopQueryExecutionCommand
+  StopQueryExecutionCommand,
+  ListTableMetadataCommand
 } = require('@aws-sdk/client-athena');
 
 class AthenaService {
   constructor(config) {
     this.client = new AthenaClient({ region: config.aws.region });
     this.database = config.aws.database;
+    this.catalog = config.aws.catalog || 'AwsDataCatalog';
     this.outputLocation = config.aws.outputLocation;
     this.workGroup = config.aws.workGroup;
     this.resultsDir = path.resolve(process.cwd(), config.server.resultsDir);
@@ -91,6 +93,39 @@ class AthenaService {
     return {
       filePath,
       fetchedAt: payload.fetchedAt
+    };
+  }
+
+  async listTableSchema() {
+    const tables = [];
+    let nextToken;
+
+    do {
+      const cmd = new ListTableMetadataCommand({
+        CatalogName: this.catalog,
+        DatabaseName: this.database,
+        NextToken: nextToken,
+        MaxResults: 50
+      });
+      const res = await this.client.send(cmd);
+      nextToken = res.NextToken;
+
+      const pageTables = (res.TableMetadataList || []).map((table) => ({
+        name: table.Name,
+        columns: (table.Columns || []).map((column) => ({
+          name: column.Name,
+          type: column.Type || 'unknown'
+        }))
+      }));
+
+      tables.push(...pageTables);
+    } while (nextToken);
+
+    tables.sort((a, b) => a.name.localeCompare(b.name));
+    return {
+      catalog: this.catalog,
+      database: this.database,
+      tables
     };
   }
 }

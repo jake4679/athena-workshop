@@ -16,6 +16,7 @@ function fromRow(row) {
 
   return {
     id: row.id,
+    name: row.name,
     queryText: row.query_text,
     athenaQueryExecutionId: row.athena_query_execution_id,
     status: row.status,
@@ -38,10 +39,11 @@ class QueryStore {
     const now = new Date();
     await this.pool.execute(
       `INSERT INTO queries (
-        id, query_text, athena_query_execution_id, status, submitted_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?)`,
+        id, name, query_text, athena_query_execution_id, status, submitted_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         record.id,
+        record.name,
         record.queryText,
         record.athenaQueryExecutionId,
         record.status,
@@ -61,6 +63,30 @@ class QueryStore {
   async listRunning() {
     const [rows] = await this.pool.execute('SELECT * FROM queries WHERE status = ?', ['RUNNING']);
     return rows.map(fromRow);
+  }
+
+  async listAll() {
+    const [rows] = await this.pool.execute('SELECT * FROM queries ORDER BY submitted_at DESC');
+    return rows.map(fromRow);
+  }
+
+  async updateQueryDetails(id, details = {}) {
+    const now = new Date();
+    await this.pool.execute(
+      `UPDATE queries SET
+        name = COALESCE(?, name),
+        query_text = COALESCE(?, query_text),
+        updated_at = ?
+      WHERE id = ?`,
+      [
+        details.name ?? null,
+        details.queryText ?? null,
+        now,
+        id
+      ]
+    );
+
+    return this.getById(id);
   }
 
   async updateStatus(id, status, extra = {}) {
@@ -106,6 +132,11 @@ class QueryStore {
       [newAthenaQueryExecutionId, now, id]
     );
     return this.getById(id);
+  }
+
+  async deleteById(id) {
+    const [result] = await this.pool.execute('DELETE FROM queries WHERE id = ?', [id]);
+    return Number(result.affectedRows || 0) > 0;
   }
 }
 

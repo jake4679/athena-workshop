@@ -17,6 +17,7 @@ async function initSchema(pool) {
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS queries (
       id VARCHAR(36) PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
       query_text TEXT NOT NULL,
       athena_query_execution_id VARCHAR(128) NOT NULL,
       status VARCHAR(32) NOT NULL,
@@ -28,6 +29,30 @@ async function initSchema(pool) {
       result_received_at DATETIME NULL,
       error_message TEXT NULL
     )
+  `);
+
+  const [columnRows] = await pool.execute(
+    `
+      SELECT COUNT(*) AS column_count
+      FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'queries'
+        AND column_name = 'name'
+    `
+  );
+
+  const hasNameColumn = Number(columnRows[0]?.column_count || 0) > 0;
+  if (!hasNameColumn) {
+    await pool.execute(`
+      ALTER TABLE queries
+      ADD COLUMN name VARCHAR(255) NOT NULL DEFAULT ''
+    `);
+  }
+
+  await pool.execute(`
+    UPDATE queries
+    SET name = id
+    WHERE name IS NULL OR name = ''
   `);
 }
 

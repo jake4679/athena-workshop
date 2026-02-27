@@ -6,6 +6,7 @@
   },
   "aws": {
     "region": "us-east-1",
+    "catalog": "AwsDataCatalog",
     "database": "sampledb",
     "outputLocation": "s3://your-athena-query-results-bucket/prefix/",
     "workGroup": "primary"

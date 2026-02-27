@@ -1,0 +1,1222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Athena Query Console</title>
+    <link href="https://cdn.jsdelivr.net/npm/tabulator-tables@6.3.0/dist/css/tabulator.min.css" rel="stylesheet" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg-1: #eef6ff;
+        --bg-2: #f9f7f2;
+        --panel: rgba(255, 255, 255, 0.86);
+        --ink: #1f2933;
+        --muted: #5f6b76;
+        --accent: #0f766e;
+        --accent-2: #0ea5e9;
+        --danger: #b42318;
+        --ok: #027a48;
+        --border: rgba(15, 23, 42, 0.14);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--ink);
+        font-family: "Space Grotesk", sans-serif;
+        background:
+          radial-gradient(circle at 10% 20%, rgba(14, 165, 233, 0.15), transparent 35%),
+          radial-gradient(circle at 80% 10%, rgba(15, 118, 110, 0.16), transparent 30%),
+          linear-gradient(160deg, var(--bg-1), var(--bg-2));
+      }
+
+      .shell {
+        max-width: 1380px;
+        margin: 24px auto;
+        padding: 0 8px;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 280px minmax(0, 1fr) 300px;
+        gap: 14px;
+        align-items: start;
+        min-width: 0;
+      }
+
+      .layout.left-collapsed {
+        grid-template-columns: 52px minmax(0, 1fr) 300px;
+      }
+
+      .layout.right-collapsed {
+        grid-template-columns: 280px minmax(0, 1fr) 52px;
+      }
+
+      .layout.left-collapsed.right-collapsed {
+        grid-template-columns: 52px minmax(0, 1fr) 52px;
+      }
+
+      .card {
+        background: var(--panel);
+        backdrop-filter: blur(8px);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: 0 8px 30px rgba(2, 6, 23, 0.08);
+        min-width: 0;
+      }
+
+      .header {
+        padding: 16px 18px 10px;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 1.25rem;
+        letter-spacing: 0.02em;
+      }
+
+      .subtitle {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .section {
+        padding: 12px 18px 18px;
+        min-width: 0;
+      }
+
+      .main-stack {
+        display: grid;
+        gap: 14px;
+        min-width: 0;
+      }
+
+      #editor {
+        height: 260px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      #editorFallback {
+        display: none;
+        width: 100%;
+        height: 260px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 14px;
+        line-height: 1.5;
+        resize: vertical;
+      }
+
+      .controls {
+        margin-top: 12px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      button {
+        appearance: none;
+        border: 0;
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-family: "Space Grotesk", sans-serif;
+        font-weight: 700;
+        cursor: pointer;
+        transition: transform 120ms ease, box-shadow 120ms ease;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      button:active {
+        transform: translateY(0);
+      }
+
+      .btn-accent {
+        color: white;
+        background: linear-gradient(90deg, var(--accent), var(--accent-2));
+        box-shadow: 0 6px 18px rgba(14, 116, 144, 0.26);
+      }
+
+      .btn-light {
+        color: var(--ink);
+        background: #e6eef8;
+      }
+
+      .status-strip {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.75);
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.86rem;
+        white-space: pre-wrap;
+      }
+
+      .status-ok {
+        color: var(--ok);
+      }
+
+      .status-err {
+        color: var(--danger);
+      }
+
+      .results {
+        min-height: 240px;
+        margin-top: 10px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.92);
+        padding: 12px;
+        overflow: auto;
+        min-width: 0;
+      }
+
+      .debug-banner {
+        margin-top: 10px;
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.75);
+        padding: 8px 10px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.75rem;
+        color: var(--muted);
+        white-space: pre-wrap;
+      }
+
+      .query-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .schema-panel {
+        overflow: hidden;
+      }
+
+      .schema-controls {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+
+      .icon-toggle {
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
+        padding: 0;
+        line-height: 1;
+        font-size: 0.9rem;
+      }
+
+      .schema-tree {
+        max-height: 700px;
+        overflow: auto;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.82);
+        padding: 6px;
+      }
+
+      .schema-tree details {
+        border-bottom: 1px solid var(--border);
+        padding: 6px 4px;
+      }
+
+      .schema-tree details:last-child {
+        border-bottom: none;
+      }
+
+      .schema-tree summary {
+        cursor: pointer;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.8rem;
+      }
+
+      .schema-columns {
+        list-style: none;
+        margin: 8px 0 0;
+        padding: 0 0 0 10px;
+      }
+
+      .schema-column-item {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.76rem;
+        line-height: 1.4;
+        color: var(--muted);
+        margin: 2px 0;
+      }
+
+      .schema-column-type {
+        color: var(--ink);
+      }
+
+      .layout.left-collapsed .schema-tree,
+      .layout.left-collapsed .schema-title,
+      .layout.left-collapsed .schema-refresh {
+        display: none;
+      }
+
+      .layout.left-collapsed .schema-controls {
+        margin-bottom: 0;
+      }
+
+      .layout.right-collapsed .query-list-title,
+      .layout.right-collapsed .query-list-refresh,
+      .layout.right-collapsed .query-list-items {
+        display: none;
+      }
+
+      .layout.right-collapsed .query-list-controls {
+        margin-bottom: 0;
+      }
+
+      .query-list-controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .query-list-items {
+        max-height: 620px;
+        overflow: auto;
+        display: grid;
+        gap: 6px;
+      }
+
+      .query-item {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.8);
+        padding: 8px;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .query-item.active {
+        border-color: var(--accent-2);
+        box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.35);
+      }
+
+      .query-item-id {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.77rem;
+        word-break: break-all;
+      }
+
+      .query-item-meta {
+        margin-top: 4px;
+        font-size: 0.73rem;
+        color: var(--muted);
+      }
+
+      .meta-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .meta-field {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.86);
+        padding: 8px 10px;
+      }
+
+      .meta-label {
+        display: block;
+        color: var(--muted);
+        font-size: 0.75rem;
+        margin-bottom: 4px;
+      }
+
+      .meta-value {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.8rem;
+        word-break: break-word;
+      }
+
+      .meta-input {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.8rem;
+        background: #fff;
+        color: var(--ink);
+      }
+
+      .table-wrap {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: auto;
+        overflow-y: auto;
+      }
+
+      .tabulator {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.8rem;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        width: max-content;
+        min-width: 100%;
+      }
+
+      pre {
+        margin: 0;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.83rem;
+        line-height: 1.45;
+      }
+
+      @media (max-width: 700px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        .shell {
+          margin: 14px auto;
+          padding: 0 6px;
+        }
+
+        #editor {
+          height: 220px;
+        }
+
+        #editorFallback {
+          height: 220px;
+        }
+
+        .meta-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .controls {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <div id="appLayout" class="layout">
+        <section class="card schema-panel">
+          <div class="section">
+            <div class="panel-header">
+              <h2 class="schema-title" style="margin: 0; font-size: 1rem">Athena Tables</h2>
+              <button id="toggleSchemaBtn" class="btn-light schema-toggle icon-toggle" type="button"><</button>
+            </div>
+            <div class="schema-controls">
+              <button id="refreshSchemaBtn" class="btn-light schema-refresh" type="button">Refresh</button>
+            </div>
+            <div id="schemaTree" class="schema-tree"></div>
+          </div>
+        </section>
+
+        <div class="main-stack">
+          <section class="card">
+            <header class="header">
+              <h1 class="title">Athena Query Console</h1>
+              <p class="subtitle">Write SQL, submit, track progress, and inspect results.</p>
+            </header>
+
+            <div class="section">
+              <div id="editor"></div>
+              <textarea id="editorFallback" aria-label="SQL editor fallback"></textarea>
+              <div class="controls">
+                <button id="formatBtn" class="btn-light" type="button">Format SQL</button>
+                <button id="submitBtn" class="btn-accent" type="button">Submit Query</button>
+              </div>
+              <div id="status" class="status-strip">Idle</div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="section">
+              <h2 style="margin: 0 0 8px; font-size: 1rem">Results</h2>
+              <div class="meta-grid">
+                <div class="meta-field">
+                  <span class="meta-label">Name</span>
+                  <input id="metaName" class="meta-input" type="text" placeholder="Query name" />
+                </div>
+                <div class="meta-field">
+                  <span class="meta-label">Query ID</span>
+                  <div id="metaQueryId" class="meta-value">-</div>
+                </div>
+                <div class="meta-field">
+                  <span class="meta-label">Status</span>
+                  <div id="metaStatus" class="meta-value">-</div>
+                </div>
+                <div class="meta-field">
+                  <span class="meta-label">Submitted At</span>
+                  <div id="metaSubmittedAt" class="meta-value">-</div>
+                </div>
+                <div class="meta-field">
+                  <span class="meta-label">Result Received At</span>
+                  <div id="metaResultReceivedAt" class="meta-value">-</div>
+                </div>
+              </div>
+              <div class="results">
+                <div id="tabularView" class="table-wrap" style="display: none"></div>
+                <pre id="resultsView">No query selected yet.</pre>
+              </div>
+              <div id="resultsDebug" class="debug-banner">Debug: idle</div>
+            </div>
+          </section>
+        </div>
+
+        <section class="card">
+          <div class="section query-list">
+            <div class="panel-header">
+              <h2 class="query-list-title" style="margin: 0; font-size: 1rem">Saved Queries</h2>
+              <button id="toggleQueryListBtn" class="btn-light query-list-toggle icon-toggle" type="button">></button>
+            </div>
+            <div class="query-list-controls">
+              <button id="deleteQueryBtn" class="btn-light query-list-refresh" type="button">Delete Selected</button>
+              <button id="refreshListBtn" class="btn-light query-list-refresh" type="button">Refresh List</button>
+            </div>
+            <div id="queryListItems" class="query-list-items"></div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script src="https://unpkg.com/sql-formatter@15.4.10/dist/sql-formatter.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
+    <script>
+      window.require = { paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.53.0/min/vs' } };
+      window.MonacoEnvironment = {
+        getWorkerUrl: function () {
+          const code = [
+            "self.MonacoEnvironment = { baseUrl: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.53.0/min/' };",
+            "importScripts('https://cdn.jsdelivr.net/npm/monaco-editor@0.53.0/min/vs/base/worker/workerMain.js');"
+          ].join('\\n');
+          return `data:text/javascript;charset=utf-8,${encodeURIComponent(code)}`;
+        }
+      };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.53.0/min/vs/loader.js"></script>
+    <script>
+      let editor;
+      let fallbackMode = false;
+      let pollTimer = null;
+      let queryListTimer = null;
+      let resultsTable = null;
+      let selectedQueryId = null;
+      let schemaCollapsed = false;
+      let queryListCollapsed = false;
+      const DEFAULT_PAGE_SIZE = 25;
+
+      const appLayoutEl = document.getElementById('appLayout');
+      const statusEl = document.getElementById('status');
+      const resultsEl = document.getElementById('resultsView');
+      const tabularViewEl = document.getElementById('tabularView');
+      const submitBtn = document.getElementById('submitBtn');
+      const formatBtn = document.getElementById('formatBtn');
+      const fallbackEditorEl = document.getElementById('editorFallback');
+      const metaNameEl = document.getElementById('metaName');
+      const metaQueryIdEl = document.getElementById('metaQueryId');
+      const metaStatusEl = document.getElementById('metaStatus');
+      const metaSubmittedAtEl = document.getElementById('metaSubmittedAt');
+      const metaResultReceivedAtEl = document.getElementById('metaResultReceivedAt');
+      const resultsDebugEl = document.getElementById('resultsDebug');
+      const queryListItemsEl = document.getElementById('queryListItems');
+      const refreshListBtn = document.getElementById('refreshListBtn');
+      const deleteQueryBtn = document.getElementById('deleteQueryBtn');
+      const toggleQueryListBtn = document.getElementById('toggleQueryListBtn');
+      const schemaTreeEl = document.getElementById('schemaTree');
+      const refreshSchemaBtn = document.getElementById('refreshSchemaBtn');
+      const toggleSchemaBtn = document.getElementById('toggleSchemaBtn');
+
+      function getEditorValue() {
+        if (fallbackMode) {
+          return fallbackEditorEl.value;
+        }
+        return editor ? editor.getValue() : '';
+      }
+
+      function setEditorValue(value) {
+        if (fallbackMode) {
+          fallbackEditorEl.value = value;
+          return;
+        }
+        if (editor) {
+          editor.setValue(value);
+        }
+      }
+
+      function enableFallbackEditor(initialValue) {
+        fallbackMode = true;
+        document.getElementById('editor').style.display = 'none';
+        fallbackEditorEl.style.display = 'block';
+        fallbackEditorEl.value = initialValue;
+        renderStatus('Monaco failed to load. Using fallback editor.', true);
+      }
+
+      function renderStatus(message, isError) {
+        statusEl.textContent = message;
+        statusEl.classList.toggle('status-err', Boolean(isError));
+        statusEl.classList.toggle('status-ok', !isError);
+      }
+
+      function renderJson(data) {
+        if (resultsTable) {
+          resultsTable.destroy();
+          resultsTable = null;
+        }
+        tabularViewEl.innerHTML = '';
+        tabularViewEl.style.display = 'none';
+        resultsEl.textContent = JSON.stringify(data, null, 2);
+        resultsEl.style.display = 'block';
+        resultsDebugEl.textContent = 'Debug: rendering JSON mode';
+      }
+
+      function setMetaFields(meta) {
+        metaNameEl.value = meta.name || '';
+        metaNameEl.dataset.lastSavedValue = meta.name || '';
+        metaQueryIdEl.textContent = meta.queryId || '-';
+        metaStatusEl.textContent = meta.status || '-';
+        metaSubmittedAtEl.textContent = meta.submittedAt || '-';
+        metaResultReceivedAtEl.textContent = meta.resultReceivedAt || '-';
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
+      function renderBasicTable(columns, rows) {
+        const safeRows = Array.isArray(rows) ? rows : [];
+        const header = columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('');
+        const body = safeRows
+          .map((row) => {
+            const rowCells = Array.isArray(row) ? row : [];
+            const cells = columns
+              .map((_, index) => {
+                const value = rowCells[index];
+                return `<td>${value === null || value === undefined ? '' : escapeHtml(value)}</td>`;
+              })
+              .join('');
+            return `<tr>${cells}</tr>`;
+          })
+          .join('');
+        tabularViewEl.innerHTML = `<table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>`;
+        tabularViewEl.style.display = 'block';
+        resultsEl.style.display = 'none';
+        resultsDebugEl.textContent = `Debug: basic table fallback | columns=${columns.length} rows=${safeRows.length}`;
+      }
+
+      function mapRowsToObjects(columns, rows) {
+        if (!Array.isArray(rows)) {
+          return [];
+        }
+        return rows.map((row) => {
+          const obj = {};
+          columns.forEach((_, index) => {
+            obj[`c${index}`] = Array.isArray(row) ? row[index] ?? null : null;
+          });
+          return obj;
+        });
+      }
+
+      function normalizeTabulatorData(columns, dataRows) {
+        if (!Array.isArray(dataRows)) {
+          return [];
+        }
+        if (dataRows.length === 0) {
+          return [];
+        }
+
+        const first = dataRows[0];
+        if (Array.isArray(first)) {
+          return mapRowsToObjects(columns, dataRows);
+        }
+
+        if (typeof first === 'object' && first !== null) {
+          if (Object.prototype.hasOwnProperty.call(first, 'c0')) {
+            return dataRows;
+          }
+
+          return dataRows.map((row) => {
+            const out = {};
+            columns.forEach((columnName, index) => {
+              out[`c${index}`] = row[columnName] ?? null;
+            });
+            return out;
+          });
+        }
+
+        return [];
+      }
+
+      function renderTabulatorTable(queryId, columns, initialData) {
+        if (!Array.isArray(columns) || columns.length === 0) {
+          renderJson({ message: 'No tabular columns available' });
+          return;
+        }
+
+        if (typeof Tabulator === 'undefined') {
+          renderStatus('Tabulator failed to load, using basic table fallback.', true);
+          renderBasicTable(columns, initialData);
+          return;
+        }
+
+        if (resultsTable) {
+          resultsTable.destroy();
+          resultsTable = null;
+        }
+
+        tabularViewEl.innerHTML = '';
+        tabularViewEl.style.display = 'block';
+        resultsEl.style.display = 'none';
+        resultsDebugEl.textContent = `Debug: initializing Tabulator | columns=${columns.length} initialRows=${Array.isArray(initialData) ? initialData.length : 0}`;
+
+        const tableColumns = columns.map((name, index) => ({
+          title: String(name),
+          field: `c${index}`,
+          headerSort: false
+        }));
+        const normalizedInitialData = normalizeTabulatorData(columns, initialData);
+        resultsDebugEl.textContent =
+          `Debug: initializing Tabulator | columns=${columns.length} initialRows=${normalizedInitialData.length}`;
+
+        try {
+          resultsTable = new Tabulator(tabularViewEl, {
+            layout: 'fitData',
+            maxHeight: '420px',
+            columns: tableColumns,
+            pagination: true,
+            paginationMode: 'remote',
+            paginationInitialPage: 1,
+            paginationSize: DEFAULT_PAGE_SIZE,
+            paginationSizeSelector: [10, 25, 50, 100],
+            paginationDataSent: {
+              page: 'page',
+              size: 'size'
+            },
+            paginationDataReceived: {
+              last_page: 'last_page',
+              data: 'data'
+            },
+            ajaxURL: `/query/${queryId}/results`,
+            ajaxURLGenerator: (url, _config, params) => {
+              const page = Number(params.page) > 0 ? Number(params.page) : 1;
+              const size = Number(params.size) > 0 ? Number(params.size) : DEFAULT_PAGE_SIZE;
+              resultsDebugEl.textContent = `Debug: Tabulator request | page=${page} size=${size}`;
+              return `${url}?page=${page}&size=${size}`;
+            },
+            ajaxConfig: 'GET',
+            ajaxResponse: (_url, params, response) => {
+              setMetaFields({
+                name: response.name || '-',
+                queryId: response.id || queryId,
+                status: response.status || '-',
+                submittedAt: metaSubmittedAtEl.textContent,
+                resultReceivedAt: response.resultReceivedAt || '-'
+              });
+              let normalized = [];
+              if (Array.isArray(response.data)) {
+                normalized = normalizeTabulatorData(columns, response.data);
+                const first = normalized[0] || null;
+                const keyPreview =
+                  first && typeof first === 'object' ? Object.keys(first).slice(0, 5).join(',') : 'none';
+                resultsDebugEl.textContent =
+                  `Debug: Tabulator response | page=${params.page || 1} size=${params.size || DEFAULT_PAGE_SIZE} ` +
+                  `last_page=${response.last_page ?? 'n/a'} dataRows=${normalized.length} source=data keys=${keyPreview}`;
+                return {
+                  ...response,
+                  data: normalized
+                };
+              }
+              if (response.results && Array.isArray(response.results.rows)) {
+                normalized = mapRowsToObjects(columns, response.results.rows);
+                resultsDebugEl.textContent =
+                  `Debug: Tabulator response | page=${params.page || 1} size=${params.size || DEFAULT_PAGE_SIZE} ` +
+                  `last_page=${response.last_page ?? 'n/a'} dataRows=${normalized.length} source=results.rows`;
+                return {
+                  ...response,
+                  data: normalized
+                };
+              }
+              resultsDebugEl.textContent =
+                `Debug: Tabulator response | page=${params.page || 1} size=${params.size || DEFAULT_PAGE_SIZE} ` +
+                `last_page=${response.last_page ?? 'n/a'} dataRows=0 source=none`;
+              return {
+                ...response,
+                data: []
+              };
+            }
+          });
+          resultsTable.setPage(1);
+        } catch (error) {
+          renderStatus(`Tabulator initialization failed: ${error.message}`, true);
+          resultsDebugEl.textContent = `Debug: Tabulator init failed | error=${error.message}`;
+          renderBasicTable(columns, initialData);
+        }
+      }
+
+      async function apiRequest(url, method, body) {
+        const response = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: body ? JSON.stringify(body) : undefined
+        });
+
+        const json = await response.json().catch(() => ({}));
+        return { ok: response.ok, status: response.status, json };
+      }
+
+      function shortId(id) {
+        if (!id || id.length < 12) {
+          return id || '';
+        }
+        return `${id.slice(0, 8)}...${id.slice(-4)}`;
+      }
+
+      function setSchemaCollapsed(nextCollapsed) {
+        schemaCollapsed = Boolean(nextCollapsed);
+        appLayoutEl.classList.toggle('left-collapsed', schemaCollapsed);
+        toggleSchemaBtn.textContent = schemaCollapsed ? '>' : '<';
+      }
+
+      function setQueryListCollapsed(nextCollapsed) {
+        queryListCollapsed = Boolean(nextCollapsed);
+        appLayoutEl.classList.toggle('right-collapsed', queryListCollapsed);
+        toggleQueryListBtn.textContent = queryListCollapsed ? '<' : '>';
+      }
+
+      function renderSchemaTree(schema) {
+        const tables = Array.isArray(schema?.tables) ? schema.tables : [];
+        if (tables.length === 0) {
+          schemaTreeEl.innerHTML = '<div class="meta-value">No tables found.</div>';
+          return;
+        }
+
+        const html = tables
+          .map((table) => {
+            const columns = Array.isArray(table.columns) ? table.columns : [];
+            const columnHtml = columns
+              .map(
+                (column) =>
+                  `<li class="schema-column-item">${escapeHtml(column.name || '')} ` +
+                  `<span class="schema-column-type">(${escapeHtml(column.type || 'unknown')})</span></li>`
+              )
+              .join('');
+            return (
+              `<details><summary>${escapeHtml(table.name || '')}</summary>` +
+              `<ul class="schema-columns">${columnHtml}</ul></details>`
+            );
+          })
+          .join('');
+        schemaTreeEl.innerHTML = html;
+      }
+
+      async function refreshSchemaTree() {
+        const res = await apiRequest('/schema', 'GET');
+        if (!res.ok) {
+          schemaTreeEl.innerHTML = `<div class="meta-value">Failed to load schema (${res.status}).</div>`;
+          return;
+        }
+        renderSchemaTree(res.json);
+      }
+
+      function setSelectedQuery(id) {
+        selectedQueryId = id;
+      }
+
+      function renderQueryList(queries) {
+        queryListItemsEl.innerHTML = '';
+        if (!Array.isArray(queries) || queries.length === 0) {
+          queryListItemsEl.innerHTML = '<div class="meta-value">No queries yet.</div>';
+          return;
+        }
+
+        queries.forEach((query) => {
+          const item = document.createElement('button');
+          item.type = 'button';
+          item.className = 'query-item';
+          if (query.id === selectedQueryId) {
+            item.classList.add('active');
+          }
+          item.innerHTML =
+            `<div class="query-item-id">${escapeHtml(query.name || query.id)}</div>` +
+            `<div class="query-item-meta">${escapeHtml(query.status || 'UNKNOWN')} | ${escapeHtml(shortId(query.id))}</div>`;
+          item.addEventListener('click', () => {
+            loadQueryById(query.id).catch((error) => {
+              renderStatus(`Failed to load query ${query.id}: ${error.message}`, true);
+            });
+          });
+          queryListItemsEl.appendChild(item);
+        });
+      }
+
+      async function refreshQueryList(preferSelectId) {
+        const res = await apiRequest('/query', 'GET');
+        if (!res.ok) {
+          renderStatus(`Failed to refresh query list (${res.status})`, true);
+          return;
+        }
+
+        const queries = Array.isArray(res.json.queries) ? res.json.queries : [];
+        if (preferSelectId) {
+          selectedQueryId = preferSelectId;
+        } else if (selectedQueryId && !queries.find((q) => q.id === selectedQueryId)) {
+          selectedQueryId = null;
+        }
+
+        renderQueryList(queries);
+      }
+
+      async function loadQueryById(id) {
+        setSelectedQuery(id);
+        await refreshQueryList(id);
+
+        const statusRes = await apiRequest(`/query/${id}/status`, 'GET');
+        if (!statusRes.ok) {
+          renderStatus(`Failed to load query status (${statusRes.status})`, true);
+          return;
+        }
+
+        const query = statusRes.json;
+        setMetaFields({
+          name: query.name || '-',
+          queryId: query.id || id,
+          status: query.status || '-',
+          submittedAt: query.submittedAt || '-',
+          resultReceivedAt: query.resultReceivedAt || '-'
+        });
+        if (typeof query.query === 'string' && query.query.length > 0) {
+          setEditorValue(query.query);
+        }
+
+        if (query.status === 'SUCCEEDED') {
+          await fetchResults(id);
+          return;
+        }
+
+        if (query.status === 'RUNNING') {
+          renderStatus(`Loaded query ${id}. Query is still running.`, false);
+          renderJson({ message: `Query ${id} is still running.` });
+          startPolling(id);
+          return;
+        }
+
+        clearPolling();
+        renderStatus(`Loaded query ${id} with state ${query.status}.`, query.status !== 'CANCELLED');
+        renderJson({ message: `No results available for query in state ${query.status}.`, status: query.status });
+      }
+
+      async function saveQueryNameIfChanged() {
+        if (!selectedQueryId) {
+          return;
+        }
+
+        const nextName = (metaNameEl.value || '').trim();
+        const lastSaved = metaNameEl.dataset.lastSavedValue || '';
+        if (!nextName || nextName === lastSaved) {
+          metaNameEl.value = lastSaved;
+          return;
+        }
+
+        const res = await apiRequest(`/query/${selectedQueryId}`, 'PUT', { name: nextName });
+        if (!res.ok) {
+          renderStatus(`Failed to save query name (${res.status})`, true);
+          metaNameEl.value = lastSaved;
+          return;
+        }
+
+        metaNameEl.dataset.lastSavedValue = res.json.name || nextName;
+        metaNameEl.value = res.json.name || nextName;
+        renderStatus(`Saved query name for ${selectedQueryId}`, false);
+        await refreshQueryList(selectedQueryId);
+      }
+
+      function clearPolling() {
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      }
+
+      function clearSelectedQueryView() {
+        selectedQueryId = null;
+        setMetaFields({
+          name: '',
+          queryId: '-',
+          status: '-',
+          submittedAt: '-',
+          resultReceivedAt: '-'
+        });
+        setEditorValue('');
+        renderJson({ message: 'No query selected yet.' });
+      }
+
+      async function fetchResults(id) {
+        const res = await apiRequest(`/query/${id}/results?limit=${DEFAULT_PAGE_SIZE}&offset=0`, 'GET');
+        if (res.ok) {
+          setMetaFields({
+            name: res.json.name || '-',
+            queryId: res.json.id,
+            status: res.json.status,
+            submittedAt: metaSubmittedAtEl.textContent,
+            resultReceivedAt: res.json.resultReceivedAt
+          });
+          renderStatus(`Query ${id} completed. Results received at ${res.json.resultReceivedAt}.`);
+          const resultPayload = res.json.results;
+          if (resultPayload && Array.isArray(resultPayload.columns)) {
+            renderTabulatorTable(id, resultPayload.columns, res.json.data || resultPayload.rows || []);
+          } else {
+            renderJson(resultPayload || res.json);
+          }
+          return;
+        }
+
+        renderStatus(`Results unavailable for query ${id}: ${res.json.message || 'unknown error'}`, true);
+        renderJson(res.json);
+      }
+
+      async function pollStatus(id) {
+        const res = await apiRequest(`/query/${id}/status`, 'GET');
+        if (!res.ok) {
+          renderStatus(`Failed to poll status (${res.status}) for ${id}`, true);
+          clearPolling();
+          return;
+        }
+
+        const state = res.json.status;
+        setMetaFields({
+          name: res.json.name || '-',
+          queryId: res.json.id || id,
+          status: res.json.status,
+          submittedAt: res.json.submittedAt || '-',
+          resultReceivedAt: res.json.resultReceivedAt || '-'
+        });
+        renderStatus(`Query ${id} status: ${state}`);
+
+        if (state === 'RUNNING') {
+          return;
+        }
+
+        clearPolling();
+
+        if (state === 'SUCCEEDED') {
+          await fetchResults(id);
+          return;
+        }
+
+        renderStatus(`Query ${id} ended in state: ${state}`, state !== 'CANCELLED');
+      }
+
+      function startPolling(id) {
+        clearPolling();
+        pollStatus(id).catch((err) => {
+          renderStatus(`Polling error: ${err.message}`, true);
+        });
+
+        pollTimer = setInterval(() => {
+          pollStatus(id).catch((err) => {
+            renderStatus(`Polling error: ${err.message}`, true);
+            clearPolling();
+          });
+        }, 2000);
+      }
+
+      submitBtn.addEventListener('click', async () => {
+        const sql = getEditorValue().trim();
+        if (!sql) {
+          renderStatus('Query text is required.', true);
+          return;
+        }
+
+        if (!selectedQueryId) {
+          renderStatus('Select an existing query from the right list before submitting.', true);
+          return;
+        }
+
+        submitBtn.disabled = true;
+        renderStatus('Submitting query...');
+
+        try {
+          const updateRes = await apiRequest(`/query/${selectedQueryId}`, 'PUT', { query: sql });
+          if (!updateRes.ok) {
+            renderStatus(
+              `Update failed (${updateRes.status}): ${updateRes.json.message || 'unknown error'}`,
+              true
+            );
+            renderJson(updateRes.json);
+            return;
+          }
+
+          const refreshRes = await apiRequest(`/query/${selectedQueryId}/refresh`, 'POST', {});
+          if (!refreshRes.ok) {
+            renderStatus(
+              `Refresh failed (${refreshRes.status}): ${refreshRes.json.message || 'unknown error'}`,
+              true
+            );
+            renderJson(refreshRes.json);
+            if (refreshRes.json?.error === 'QUERY_RUNNING') {
+              startPolling(selectedQueryId);
+            }
+            return;
+          }
+
+          renderStatus(`Query updated and refreshed: ${selectedQueryId}`);
+          renderJson({ message: `Query ${selectedQueryId} refreshed. Waiting for results...` });
+          await refreshQueryList(selectedQueryId);
+          startPolling(selectedQueryId);
+        } catch (err) {
+          renderStatus(`Submit error: ${err.message}`, true);
+        } finally {
+          submitBtn.disabled = false;
+        }
+      });
+
+      formatBtn.addEventListener('click', () => {
+        try {
+          const formatted = window.sqlFormatter.format(getEditorValue(), { language: 'sql' });
+          setEditorValue(formatted);
+          renderStatus('SQL formatted.');
+        } catch (err) {
+          renderStatus(`Format failed: ${err.message}`, true);
+        }
+      });
+
+      metaNameEl.addEventListener('blur', () => {
+        saveQueryNameIfChanged().catch((error) => {
+          renderStatus(`Failed to save query name: ${error.message}`, true);
+        });
+      });
+
+      refreshListBtn.addEventListener('click', () => {
+        refreshQueryList(selectedQueryId).catch((error) => {
+          renderStatus(`Failed to refresh query list: ${error.message}`, true);
+        });
+      });
+
+      deleteQueryBtn.addEventListener('click', () => {
+        if (!selectedQueryId) {
+          renderStatus('Select a query to delete.', true);
+          return;
+        }
+
+        const idToDelete = selectedQueryId;
+        apiRequest(`/query/${idToDelete}`, 'DELETE')
+          .then(async (res) => {
+            if (!res.ok) {
+              renderStatus(`Delete failed (${res.status}): ${res.json.message || 'unknown error'}`, true);
+              return;
+            }
+
+            clearPolling();
+            clearSelectedQueryView();
+            await refreshQueryList();
+            renderStatus(`Deleted query ${idToDelete}`, false);
+          })
+          .catch((error) => {
+            renderStatus(`Delete failed: ${error.message}`, true);
+          });
+      });
+
+      refreshSchemaBtn.addEventListener('click', () => {
+        refreshSchemaTree().catch((error) => {
+          renderStatus(`Failed to refresh schema: ${error.message}`, true);
+        });
+      });
+
+      toggleSchemaBtn.addEventListener('click', () => {
+        setSchemaCollapsed(!schemaCollapsed);
+      });
+
+      toggleQueryListBtn.addEventListener('click', () => {
+        setQueryListCollapsed(!queryListCollapsed);
+      });
+
+      window.addEventListener('beforeunload', () => {
+        clearPolling();
+        if (queryListTimer) {
+          clearInterval(queryListTimer);
+          queryListTimer = null;
+        }
+      });
+
+      window.require(
+        ['vs/editor/editor.main'],
+        () => {
+          editor = monaco.editor.create(document.getElementById('editor'), {
+            value: 'SELECT current_timestamp AS ts;',
+            language: 'sql',
+            theme: 'vs',
+            minimap: { enabled: false },
+            automaticLayout: true,
+            fontSize: 14,
+            fontFamily: 'IBM Plex Mono, monospace',
+            padding: { top: 12, bottom: 12 },
+            scrollBeyondLastLine: false,
+            readOnly: false,
+            domReadOnly: false
+          });
+          refreshQueryList().catch((error) => {
+            renderStatus(`Failed to load query list: ${error.message}`, true);
+          });
+          refreshSchemaTree().catch((error) => {
+            renderStatus(`Failed to load schema: ${error.message}`, true);
+          });
+          queryListTimer = setInterval(() => {
+            refreshQueryList(selectedQueryId).catch((error) => {
+              renderStatus(`Failed to refresh query list: ${error.message}`, true);
+            });
+          }, 10000);
+        },
+        () => {
+          enableFallbackEditor('SELECT current_timestamp AS ts;');
+          refreshQueryList().catch((error) => {
+            renderStatus(`Failed to load query list: ${error.message}`, true);
+          });
+          refreshSchemaTree().catch((error) => {
+            renderStatus(`Failed to load schema: ${error.message}`, true);
+          });
+          queryListTimer = setInterval(() => {
+            refreshQueryList(selectedQueryId).catch((error) => {
+              renderStatus(`Failed to refresh query list: ${error.message}`, true);
+            });
+          }, 10000);
+        }
+      );
+    </script>
+  </body>
+</html>
