@@ -17,6 +17,7 @@ function fromRow(row) {
   return {
     id: row.id,
     name: row.name,
+    databaseName: row.database_name || null,
     queryText: row.query_text,
     athenaQueryExecutionId: row.athena_query_execution_id,
     status: row.status,
@@ -39,11 +40,12 @@ class QueryStore {
     const now = new Date();
     await this.pool.execute(
       `INSERT INTO queries (
-        id, name, query_text, athena_query_execution_id, status, submitted_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        id, name, database_name, query_text, athena_query_execution_id, status, submitted_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         record.id,
         record.name,
+        record.databaseName || null,
         record.queryText,
         record.athenaQueryExecutionId,
         record.status,
@@ -75,11 +77,13 @@ class QueryStore {
     await this.pool.execute(
       `UPDATE queries SET
         name = COALESCE(?, name),
+        database_name = COALESCE(?, database_name),
         query_text = COALESCE(?, query_text),
         updated_at = ?
       WHERE id = ?`,
       [
         details.name ?? null,
+        details.databaseName ?? null,
         details.queryText ?? null,
         now,
         id

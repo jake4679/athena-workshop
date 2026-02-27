@@ -99,19 +99,24 @@ async function logAwsSecurityContext(athenaService) {
 }
 
 function createServices({ queryStore, athenaService, lockManager }) {
-  async function createQuery(queryText) {
+  async function createQuery(queryText, databaseName) {
     const id = uuidv4();
-    const athenaQueryExecutionId = await athenaService.submitQuery(queryText);
+    const submitted = await athenaService.submitQuery(queryText, databaseName);
 
     const created = await queryStore.create({
       id,
       name: id,
+      databaseName: submitted.databaseName,
       queryText,
-      athenaQueryExecutionId,
+      athenaQueryExecutionId: submitted.athenaQueryExecutionId,
       status: 'RUNNING'
     });
 
-    logger.info('Query submitted', { id, athenaQueryExecutionId });
+    logger.info('Query submitted', {
+      id,
+      athenaQueryExecutionId: submitted.athenaQueryExecutionId,
+      databaseName: submitted.databaseName
+    });
     return created;
   }
 
@@ -126,14 +131,18 @@ function createServices({ queryStore, athenaService, lockManager }) {
         return { error: 'RUNNING' };
       }
 
-      const athenaQueryExecutionId = await athenaService.submitQuery(existing.queryText);
-      const refreshed = await queryStore.resetForRefresh(id, athenaQueryExecutionId);
+      const submitted = await athenaService.submitQuery(existing.queryText, existing.databaseName);
+      const refreshed = await queryStore.resetForRefresh(id, submitted.athenaQueryExecutionId);
 
       if (existing.resultPath && fs.existsSync(existing.resultPath)) {
         fs.unlinkSync(existing.resultPath);
       }
 
-      logger.info('Query refreshed', { id, athenaQueryExecutionId });
+      logger.info('Query refreshed', {
+        id,
+        athenaQueryExecutionId: submitted.athenaQueryExecutionId,
+        databaseName: submitted.databaseName
+      });
       return refreshed;
     });
   }
@@ -284,12 +293,20 @@ function createServices({ queryStore, athenaService, lockManager }) {
     logger.info('Poll cycle finished', { checkedQueryCount: running.length });
   }
 
-  async function getSchema() {
-    return athenaService.listTableSchema();
+  async function listDatabases() {
+    return athenaService.listDatabases();
   }
 
-  async function validateQuery(queryText) {
-    return athenaService.validateQuery(queryText);
+  async function listTables(databaseName) {
+    return athenaService.listTables(databaseName);
+  }
+
+  async function getTableSchema(databaseName, tableName) {
+    return athenaService.getTableSchema(databaseName, tableName);
+  }
+
+  async function validateQuery(queryText, databaseName) {
+    return athenaService.validateQuery(queryText, { databaseName });
   }
 
   return {
@@ -298,7 +315,9 @@ function createServices({ queryStore, athenaService, lockManager }) {
     refreshQuery,
     cancelQuery,
     deleteQuery,
-    getSchema,
+    listDatabases,
+    listTables,
+    getTableSchema,
     validateQuery,
     pollRunningQueries
   };
@@ -311,7 +330,7 @@ async function startServer() {
   fs.mkdirSync(resultsDir, { recursive: true });
 
   const pool = await createPool(config.mysql);
-  await initSchema(pool);
+  await initSchema(pool, { defaultAthenaDatabase: config.aws?.database || null });
 
   const queryStore = new QueryStore(pool);
   const athenaService = new AthenaService(config);

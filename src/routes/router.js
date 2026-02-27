@@ -2,7 +2,9 @@ const express = require('express');
 const {
   createQueryHandler,
   updateQueryHandler,
-  getSchemaHandler,
+  listDatabasesHandler,
+  listTablesHandler,
+  getTableSchemaHandler,
   validateQueryHandler,
   getQueryListHandler,
   getQueryStatusHandler,
@@ -21,7 +23,9 @@ function buildRouter(context) {
   const router = express.Router();
   router.use(authMiddleware);
 
-  router.get('/schema', getSchemaHandler(context));
+  router.get('/database', listDatabasesHandler(context));
+  router.get('/database/:database/tables', listTablesHandler(context));
+  router.get('/database/:database/:table/schema', getTableSchemaHandler(context));
   router.post('/query', createQueryHandler(context));
   router.post('/query/validate', validateQueryHandler(context));
   router.get('/query', getQueryListHandler(context));

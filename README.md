@@ -21,9 +21,11 @@ node src/server.js --config ./config.json --port 4000
 ```
 
 ## Endpoints
-- `GET /schema` (Athena database tables and columns/types)
-- `POST /query/validate` body: `{ "query": "SELECT ..." }` (Athena-backed syntax validation)
-- `POST /query` body: `{ "query": "SELECT ..." }`
+- `GET /database` (list available Athena databases)
+- `GET /database/:database/tables` (list tables for a database)
+- `GET /database/:database/:table/schema` (columns/types for a table)
+- `POST /query/validate` body: `{ "query": "SELECT ...", "database": "my_db" }` (database optional; Athena-backed syntax validation)
+- `POST /query` body: `{ "query": "SELECT ...", "database": "my_db" }` (database optional)
 - `GET /query`
 - `PUT /query/:id` body: `{ "name": "Friendly name", "query": "SELECT ..." }` (either field may be provided)
 - `DELETE /query/:id` (removes query metadata and any local stored results)
@@ -37,6 +39,7 @@ node src/server.js --config ./config.json --port 4000
 ## Frontend
 - `GET /` serves a minimal HTML page with:
 - Monaco SQL editor
+- Athena database selector persisted in browser local storage
 - Monaco autocomplete for SQL keywords, table names, and columns
 - Debounced backend syntax validation with inline Monaco error markers
 - SQL formatting button

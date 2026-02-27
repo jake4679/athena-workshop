@@ -13,11 +13,14 @@ async function createPool(mysqlConfig) {
   });
 }
 
-async function initSchema(pool) {
+async function initSchema(pool, options = {}) {
+  const defaultAthenaDatabase = options.defaultAthenaDatabase || null;
+
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS queries (
       id VARCHAR(36) PRIMARY KEY,
       name VARCHAR(255) NOT NULL,
+      database_name VARCHAR(255) NULL,
       query_text TEXT NOT NULL,
       athena_query_execution_id VARCHAR(128) NOT NULL,
       status VARCHAR(32) NOT NULL,
@@ -54,6 +57,35 @@ async function initSchema(pool) {
     SET name = id
     WHERE name IS NULL OR name = ''
   `);
+
+  const [databaseColumnRows] = await pool.execute(
+    `
+      SELECT COUNT(*) AS column_count
+      FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'queries'
+        AND column_name = 'database_name'
+    `
+  );
+
+  const hasDatabaseColumn = Number(databaseColumnRows[0]?.column_count || 0) > 0;
+  if (!hasDatabaseColumn) {
+    await pool.execute(`
+      ALTER TABLE queries
+      ADD COLUMN database_name VARCHAR(255) NULL
+    `);
+  }
+
+  if (defaultAthenaDatabase) {
+    await pool.execute(
+      `
+        UPDATE queries
+        SET database_name = ?
+        WHERE database_name IS NULL OR database_name = ''
+      `,
+      [defaultAthenaDatabase]
+    );
+  }
 }
 
 module.exports = {

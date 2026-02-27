@@ -89,6 +89,7 @@ function notFoundResponse(res, id) {
 function createQueryHandler({ services, logger }) {
   return async function createQuery(req, res) {
     const queryText = req.body?.query;
+    const databaseName = req.body?.database;
     if (!queryText || typeof queryText !== 'string') {
       return res.status(400).json({
         error: 'INVALID_REQUEST',
@@ -96,11 +97,19 @@ function createQueryHandler({ services, logger }) {
       });
     }
 
+    if (databaseName !== undefined && (typeof databaseName !== 'string' || databaseName.trim() === '')) {
+      return res.status(400).json({
+        error: 'INVALID_REQUEST',
+        message: 'database must be a non-empty string when provided'
+      });
+    }
+
     try {
-      const created = await services.createQuery(queryText);
+      const created = await services.createQuery(queryText, databaseName);
       return res.status(202).json({
         id: created.id,
         name: created.name,
+        database: created.databaseName,
         status: created.status,
         submittedAt: created.submittedAt
       });
@@ -127,6 +136,7 @@ function getQueryStatusHandler({ services }) {
       return res.status(200).json({
         id: query.id,
         name: query.name,
+        database: query.databaseName,
         status: query.status,
         query: query.queryText,
         submittedAt: query.submittedAt,
@@ -153,6 +163,7 @@ function getQueryListHandler({ services }) {
         queries: queries.map((query) => ({
           id: query.id,
           name: query.name,
+          database: query.databaseName,
           status: query.status,
           query: query.queryText,
           submittedAt: query.submittedAt,
@@ -171,24 +182,99 @@ function getQueryListHandler({ services }) {
   };
 }
 
-function getSchemaHandler({ services, logger }) {
-  return async function getSchema(_req, res) {
-    logger.info('Schema refresh requested');
-
+function listDatabasesHandler({ services, logger }) {
+  return async function listDatabases(_req, res) {
+    logger.info('Athena database list requested');
     try {
-      const schema = await services.getSchema();
-      logger.info('Schema refresh succeeded', {
-        tableCount: Array.isArray(schema?.tables) ? schema.tables.length : 0,
-        catalog: schema?.catalog || null,
-        database: schema?.database || null
+      const databases = await services.listDatabases();
+      logger.info('Athena database list succeeded', {
+        databaseCount: databases.length
       });
-      return res.status(200).json(schema);
+      return res.status(200).json({ databases });
     } catch (error) {
-      logger.error('Schema refresh failed', {
+      logger.error('Athena database list failed', {
         error: error.message
       });
       return res.status(500).json({
-        error: 'SCHEMA_LOOKUP_FAILED',
+        error: 'DATABASE_LIST_FAILED',
+        message: 'Failed to list Athena databases'
+      });
+    }
+  };
+}
+
+function listTablesHandler({ services, logger }) {
+  return async function listTables(req, res) {
+    const database = req.params.database;
+    if (!database || typeof database !== 'string' || database.trim() === '') {
+      return res.status(400).json({
+        error: 'INVALID_REQUEST',
+        message: 'database identifier must be a non-empty string'
+      });
+    }
+
+    logger.info('Athena table list requested', { database });
+    try {
+      const result = await services.listTables(database);
+      logger.info('Athena table list succeeded', {
+        database: result.database,
+        tableCount: Array.isArray(result.tables) ? result.tables.length : 0
+      });
+      return res.status(200).json(result);
+    } catch (error) {
+      logger.error('Athena table list failed', {
+        database,
+        error: error.message
+      });
+      return res.status(500).json({
+        error: 'TABLE_LIST_FAILED',
+        message: 'Failed to list Athena tables'
+      });
+    }
+  };
+}
+
+function getTableSchemaHandler({ services, logger }) {
+  return async function getTableSchema(req, res) {
+    const database = req.params.database;
+    const table = req.params.table;
+    if (!database || typeof database !== 'string' || database.trim() === '') {
+      return res.status(400).json({
+        error: 'INVALID_REQUEST',
+        message: 'database identifier must be a non-empty string'
+      });
+    }
+    if (!table || typeof table !== 'string' || table.trim() === '') {
+      return res.status(400).json({
+        error: 'INVALID_REQUEST',
+        message: 'table identifier must be a non-empty string'
+      });
+    }
+
+    logger.info('Athena table schema requested', { database, table });
+    try {
+      const schema = await services.getTableSchema(database, table);
+      logger.info('Athena table schema succeeded', {
+        database: schema.database,
+        table: schema.table,
+        columnCount: Array.isArray(schema.columns) ? schema.columns.length : 0
+      });
+      return res.status(200).json(schema);
+    } catch (error) {
+      if (error && error.code === 'TABLE_NOT_FOUND') {
+        return res.status(404).json({
+          error: 'TABLE_NOT_FOUND',
+          message: `Unknown table identifier: ${table}`
+        });
+      }
+
+      logger.error('Athena table schema failed', {
+        database,
+        table,
+        error: error.message
+      });
+      return res.status(500).json({
+        error: 'TABLE_SCHEMA_LOOKUP_FAILED',
         message: 'Failed to fetch Athena table schema'
       });
     }
@@ -199,6 +285,7 @@ function validateQueryHandler({ services }) {
   return async function validateQuery(req, res) {
     try {
       const queryText = req.body?.query;
+      const databaseName = req.body?.database;
       if (!queryText || typeof queryText !== 'string') {
         return res.status(400).json({
           error: 'INVALID_REQUEST',
@@ -206,12 +293,20 @@ function validateQueryHandler({ services }) {
         });
       }
 
-      const validation = await services.validateQuery(queryText);
+      if (databaseName !== undefined && (typeof databaseName !== 'string' || databaseName.trim() === '')) {
+        return res.status(400).json({
+          error: 'INVALID_REQUEST',
+          message: 'database must be a non-empty string when provided'
+        });
+      }
+
+      const validation = await services.validateQuery(queryText, databaseName);
       if (validation.valid) {
         return res.status(200).json({
           valid: true,
           markers: [],
-          athenaQueryExecutionId: validation.athenaQueryExecutionId
+          athenaQueryExecutionId: validation.athenaQueryExecutionId,
+          database: validation.databaseName || null
         });
       }
 
@@ -220,7 +315,8 @@ function validateQueryHandler({ services }) {
         valid: false,
         markers,
         error: validation.error || 'Validation failed',
-        athenaQueryExecutionId: validation.athenaQueryExecutionId
+        athenaQueryExecutionId: validation.athenaQueryExecutionId,
+        database: validation.databaseName || null
       });
     } catch (_error) {
       return res.status(500).json({
@@ -242,13 +338,15 @@ function updateQueryHandler({ services }) {
 
       const nextName = req.body?.name;
       const nextQuery = req.body?.query;
+      const nextDatabase = req.body?.database;
       const hasName = nextName !== undefined;
       const hasQuery = nextQuery !== undefined;
+      const hasDatabase = nextDatabase !== undefined;
 
-      if (!hasName && !hasQuery) {
+      if (!hasName && !hasQuery && !hasDatabase) {
         return res.status(400).json({
           error: 'INVALID_REQUEST',
-          message: 'Request body must include at least one of: name, query'
+          message: 'Request body must include at least one of: name, query, database'
         });
       }
 
@@ -266,14 +364,23 @@ function updateQueryHandler({ services }) {
         });
       }
 
+      if (hasDatabase && (typeof nextDatabase !== 'string' || nextDatabase.trim() === '')) {
+        return res.status(400).json({
+          error: 'INVALID_REQUEST',
+          message: 'database must be a non-empty string'
+        });
+      }
+
       const updated = await services.queryStore.updateQueryDetails(id, {
         name: hasName ? nextName.trim() : undefined,
+        databaseName: hasDatabase ? nextDatabase.trim() : undefined,
         queryText: hasQuery ? nextQuery : undefined
       });
 
       return res.status(200).json({
         id: updated.id,
         name: updated.name,
+        database: updated.databaseName,
         status: updated.status,
         query: updated.queryText,
         submittedAt: updated.submittedAt,
@@ -382,6 +489,7 @@ function getQueryResultsHandler({ services }) {
         return res.status(200).json({
           id: query.id,
           name: query.name,
+          database: query.databaseName,
           status: query.status,
           resultReceivedAt: query.resultReceivedAt,
           results: {
@@ -406,6 +514,7 @@ function getQueryResultsHandler({ services }) {
       return res.status(200).json({
         id: query.id,
         name: query.name,
+        database: query.databaseName,
         status: query.status,
         resultReceivedAt: query.resultReceivedAt,
         results: {
@@ -443,6 +552,7 @@ function refreshQueryHandler({ services }) {
 
       return res.status(202).json({
         id,
+        database: refreshed.databaseName || null,
         status: refreshed.status,
         submittedAt: refreshed.submittedAt,
         updatedAt: refreshed.updatedAt
@@ -521,7 +631,9 @@ function deleteQueryHandler({ services }) {
 module.exports = {
   createQueryHandler,
   updateQueryHandler,
-  getSchemaHandler,
+  listDatabasesHandler,
+  listTablesHandler,
+  getTableSchemaHandler,
   validateQueryHandler,
   getQueryListHandler,
   getQueryStatusHandler,

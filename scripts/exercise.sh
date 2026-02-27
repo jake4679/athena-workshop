@@ -123,9 +123,21 @@ request GET "$BASE_URL/health"
 assert_status 200 "health endpoint"
 assert_jq_eq '.status' 'ok' "health payload"
 
-request GET "$BASE_URL/schema"
-assert_status 200 "schema endpoint"
-assert_jq_eq '(.tables | type)' 'array' "schema tables payload type"
+request GET "$BASE_URL/database"
+assert_status 200 "database list endpoint"
+assert_jq_eq '(.databases | type)' 'array' "database list payload type"
+assert_jq_nonempty '.databases[0]' "database list first database present"
+DB_NAME=$(echo "$LAST_BODY" | jq -r '.databases[0]')
+
+request GET "$BASE_URL/database/$DB_NAME/tables"
+assert_status 200 "database tables endpoint"
+assert_jq_eq '(.tables | type)' 'array' "database tables payload type"
+if [[ "$(echo "$LAST_BODY" | jq -r '.tables | length')" -gt 0 ]]; then
+  TABLE_NAME=$(echo "$LAST_BODY" | jq -r '.tables[0]')
+  request GET "$BASE_URL/database/$DB_NAME/$TABLE_NAME/schema"
+  assert_status 200 "table schema endpoint"
+  assert_jq_eq '(.columns | type)' 'array' "table schema columns payload type"
+fi
 
 request POST "$BASE_URL/query/validate" '{"query":"SELECT current_timestamp"}'
 assert_status 200 "query validate endpoint (valid)"

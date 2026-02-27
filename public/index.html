@@ -227,6 +227,29 @@
         display: flex;
         gap: 8px;
         margin-bottom: 8px;
+        align-items: center;
+      }
+
+      .database-select {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.8rem;
+        background: #fff;
+        color: var(--ink);
+      }
+
+      .schema-filter {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.8rem;
+        background: #fff;
+        color: var(--ink);
       }
 
       .panel-header {
@@ -267,6 +290,10 @@
         cursor: pointer;
         font-family: "IBM Plex Mono", monospace;
         font-size: 0.8rem;
+        white-space: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        display: block;
       }
 
       .schema-columns {
@@ -281,6 +308,7 @@
         line-height: 1.4;
         color: var(--muted);
         margin: 2px 0;
+        white-space: nowrap;
       }
 
       .schema-column-type {
@@ -450,6 +478,10 @@
               <button id="toggleSchemaBtn" class="btn-light schema-toggle icon-toggle" type="button"><</button>
             </div>
             <div class="schema-controls">
+              <select id="databaseSelect" class="database-select" aria-label="Athena database selector"></select>
+            </div>
+            <div class="schema-controls">
+              <input id="schemaFilterInput" class="schema-filter" type="text" placeholder="Filter tables..." />
               <button id="refreshSchemaBtn" class="btn-light schema-refresh" type="button">Refresh</button>
             </div>
             <div id="schemaTree" class="schema-tree"></div>
@@ -550,7 +582,10 @@
       let selectedQueryId = null;
       let schemaCollapsed = false;
       let queryListCollapsed = false;
-      let schemaCache = { tables: [] };
+      let schemaCache = { database: null, tables: [] };
+      let schemaPrefetchGeneration = 0;
+      let databaseList = [];
+      let selectedDatabase = null;
       let validateTimer = null;
       let completionProviderRegistered = false;
       const VALIDATION_DEBOUNCE_MS = 650;
@@ -582,6 +617,8 @@
       const deleteQueryBtn = document.getElementById('deleteQueryBtn');
       const toggleQueryListBtn = document.getElementById('toggleQueryListBtn');
       const schemaTreeEl = document.getElementById('schemaTree');
+      const databaseSelectEl = document.getElementById('databaseSelect');
+      const schemaFilterInputEl = document.getElementById('schemaFilterInput');
       const refreshSchemaBtn = document.getElementById('refreshSchemaBtn');
       const toggleSchemaBtn = document.getElementById('toggleSchemaBtn');
 
@@ -907,13 +944,20 @@
         if (!editor) {
           return;
         }
+        if (!selectedDatabase) {
+          setValidationMarkers([]);
+          return;
+        }
         const sql = getEditorValue().trim();
         if (!sql) {
           setValidationMarkers([]);
           return;
         }
 
-        const res = await apiRequest('/query/validate', 'POST', { query: sql });
+        const res = await apiRequest('/query/validate', 'POST', {
+          query: sql,
+          database: selectedDatabase
+        });
         if (!res.ok) {
           return;
         }
@@ -979,41 +1023,224 @@
       }
 
       function renderSchemaTree(schema) {
-        const tables = Array.isArray(schema?.tables) ? schema.tables : [];
-        if (tables.length === 0) {
+        const allTables = Array.isArray(schema?.tables) ? schema.tables : [];
+        const filter = (schemaFilterInputEl.value || '').trim().toLowerCase();
+        const tables = filter
+          ? allTables.filter((table) => String(table?.name || '').toLowerCase().includes(filter))
+          : allTables;
+
+        if (allTables.length === 0) {
           schemaTreeEl.innerHTML = '<div class="meta-value">No tables found.</div>';
+          return;
+        }
+
+        if (tables.length === 0) {
+          schemaTreeEl.innerHTML = '<div class="meta-value">No matching tables.</div>';
           return;
         }
 
         const html = tables
           .map((table) => {
-            const columns = Array.isArray(table.columns) ? table.columns : [];
-            const columnHtml = columns
-              .map(
-                (column) =>
-                  `<li class="schema-column-item">${escapeHtml(column.name || '')} ` +
-                  `<span class="schema-column-type">(${escapeHtml(column.type || 'unknown')})</span></li>`
-              )
-              .join('');
+            let columnHtml = '';
+            if (table.loadingSchema) {
+              columnHtml = '<li class="schema-column-item">Loading schema...</li>';
+            } else if (table.schemaError) {
+              columnHtml = `<li class="schema-column-item">${escapeHtml(table.schemaError)}</li>`;
+            } else if (Array.isArray(table.columns) && table.columns.length > 0) {
+              columnHtml = table.columns
+                .map(
+                  (column) =>
+                    `<li class="schema-column-item">${escapeHtml(column.name || '')} ` +
+                    `<span class="schema-column-type">(${escapeHtml(column.type || 'unknown')})</span></li>`
+                )
+                .join('');
+            } else {
+              columnHtml = '<li class="schema-column-item">Expand to load schema</li>';
+            }
             return (
-              `<details><summary>${escapeHtml(table.name || '')}</summary>` +
+              `<details data-table-name="${escapeHtml(table.name || '')}"><summary>${escapeHtml(table.name || '')}</summary>` +
               `<ul class="schema-columns">${columnHtml}</ul></details>`
             );
           })
           .join('');
         schemaTreeEl.innerHTML = html;
+
+        schemaTreeEl.querySelectorAll('details[data-table-name]').forEach((detailsEl) => {
+          detailsEl.addEventListener('toggle', () => {
+            if (!detailsEl.open) {
+              return;
+            }
+            const tableName = detailsEl.getAttribute('data-table-name');
+            if (!tableName) {
+              return;
+            }
+            loadTableSchema(tableName).catch((error) => {
+              renderStatus(`Failed to load table schema: ${error.message}`, true);
+            });
+          });
+        });
+      }
+
+      function renderDatabaseOptions(databases) {
+        const options = Array.isArray(databases) ? databases : [];
+        if (options.length === 0) {
+          databaseSelectEl.innerHTML = '<option value="">No databases found</option>';
+          databaseSelectEl.disabled = true;
+          selectedDatabase = null;
+          return;
+        }
+
+        databaseSelectEl.disabled = false;
+        databaseSelectEl.innerHTML = options
+          .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+          .join('');
+
+        if (!selectedDatabase || !options.includes(selectedDatabase)) {
+          selectedDatabase = options[0];
+        }
+        databaseSelectEl.value = selectedDatabase;
+      }
+
+      async function refreshDatabases(preferDatabase) {
+        const res = await apiRequest('/database', 'GET');
+        if (!res.ok) {
+          throw new Error(`Failed to load databases (${res.status})`);
+        }
+
+        const databases = Array.isArray(res.json.databases) ? res.json.databases : [];
+        databaseList = databases;
+        if (preferDatabase && databases.includes(preferDatabase)) {
+          selectedDatabase = preferDatabase;
+        } else if (!selectedDatabase || !databases.includes(selectedDatabase)) {
+          selectedDatabase = databases[0] || null;
+        }
+        renderDatabaseOptions(databases);
+        persistUiState();
+      }
+
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      async function refreshDatabasesWithRetry(preferDatabase, maxAttempts = 4) {
+        let lastError = null;
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          try {
+            await refreshDatabases(preferDatabase);
+            return;
+          } catch (error) {
+            lastError = error;
+            renderStatus(
+              `Database load attempt ${attempt}/${maxAttempts} failed: ${error.message}`,
+              true
+            );
+            if (attempt < maxAttempts) {
+              await sleep(Math.min(3000, attempt * 500));
+            }
+          }
+        }
+        throw lastError || new Error('Failed to load databases');
       }
 
       async function refreshSchemaTree() {
-        const res = await apiRequest('/schema', 'GET');
+        if (!selectedDatabase) {
+          schemaTreeEl.innerHTML = '<div class="meta-value">Select a database to load tables.</div>';
+          return;
+        }
+
+        const res = await apiRequest(`/database/${encodeURIComponent(selectedDatabase)}/tables`, 'GET');
         if (!res.ok) {
           schemaTreeEl.innerHTML = `<div class="meta-value">Failed to load schema (${res.status}).</div>`;
           return;
         }
-        schemaCache = {
-          tables: Array.isArray(res.json.tables) ? res.json.tables : []
-        };
-        renderSchemaTree(res.json);
+
+        const tableNames = Array.isArray(res.json.tables) ? res.json.tables : [];
+        const canReuseCachedTables = schemaCache.database === selectedDatabase;
+        const nextTables = tableNames.map((name) => {
+          const existing = canReuseCachedTables
+            ? (schemaCache.tables || []).find((table) => table.name === name)
+            : null;
+          if (existing) {
+            return existing;
+          }
+          return { name, columns: null, loadingSchema: false, schemaError: null };
+        });
+        schemaCache = { database: selectedDatabase, tables: nextTables };
+        renderSchemaTree(schemaCache);
+
+        schemaPrefetchGeneration += 1;
+        const generation = schemaPrefetchGeneration;
+        prefetchTableSchemasInBackground(selectedDatabase, generation).catch(() => {
+          // best-effort prefetch only
+        });
+      }
+
+      async function loadTableSchema(tableName) {
+        if (!selectedDatabase) {
+          return;
+        }
+
+        const databaseForRequest = schemaCache.database || selectedDatabase;
+        const table = (schemaCache.tables || []).find((entry) => entry.name === tableName);
+        if (!table || Array.isArray(table.columns) || table.loadingSchema) {
+          return;
+        }
+
+        table.loadingSchema = true;
+        table.schemaError = null;
+        renderSchemaTree(schemaCache);
+
+        const res = await apiRequest(
+          `/database/${encodeURIComponent(databaseForRequest)}/${encodeURIComponent(tableName)}/schema`,
+          'GET'
+        );
+
+        table.loadingSchema = false;
+        if (!res.ok) {
+          table.schemaError = `Failed to load schema (${res.status})`;
+          renderSchemaTree(schemaCache);
+          return;
+        }
+
+        table.columns = Array.isArray(res.json.columns) ? res.json.columns : [];
+        table.schemaError = null;
+        renderSchemaTree(schemaCache);
+      }
+
+      async function prefetchTableSchemasInBackground(databaseName, generation) {
+        const maxConcurrent = 4;
+        const pendingTableNames = (schemaCache.tables || [])
+          .filter((table) => !Array.isArray(table.columns) && !table.loadingSchema)
+          .map((table) => table.name);
+
+        let cursor = 0;
+        async function worker() {
+          while (cursor < pendingTableNames.length) {
+            if (
+              schemaPrefetchGeneration !== generation ||
+              selectedDatabase !== databaseName ||
+              schemaCache.database !== databaseName
+            ) {
+              return;
+            }
+
+            const currentIndex = cursor;
+            cursor += 1;
+            const tableName = pendingTableNames[currentIndex];
+            try {
+              await loadTableSchema(tableName);
+            } catch (_error) {
+              // per-table failure is rendered inline
+            }
+          }
+        }
+
+        const workerCount = Math.min(maxConcurrent, pendingTableNames.length);
+        const workers = [];
+        for (let i = 0; i < workerCount; i += 1) {
+          workers.push(worker());
+        }
+        await Promise.all(workers);
       }
 
       function setSelectedQuery(id) {
@@ -1028,7 +1255,8 @@
             JSON.stringify({
               schemaCollapsed,
               queryListCollapsed,
-              selectedQueryId
+              selectedQueryId,
+              selectedDatabase
             })
           );
         } catch (_error) {
@@ -1051,6 +1279,9 @@
           }
           if (typeof state.selectedQueryId === 'string' && state.selectedQueryId.trim() !== '') {
             selectedQueryId = state.selectedQueryId;
+          }
+          if (typeof state.selectedDatabase === 'string' && state.selectedDatabase.trim() !== '') {
+            selectedDatabase = state.selectedDatabase;
           }
         } catch (_error) {
           // ignore malformed state
@@ -1111,6 +1342,12 @@
         }
 
         const query = statusRes.json;
+        if (query.database && query.database !== selectedDatabase) {
+          selectedDatabase = query.database;
+          renderDatabaseOptions(databaseList);
+          persistUiState();
+          await refreshSchemaTree();
+        }
         setMetaFields({
           name: query.name || '-',
           queryId: query.id || id,
@@ -1255,6 +1492,11 @@
       }
 
       submitBtn.addEventListener('click', async () => {
+        if (!selectedDatabase) {
+          renderStatus('Select an Athena database first.', true);
+          return;
+        }
+
         const sql = getEditorValue().trim();
         if (!sql) {
           renderStatus('Query text is required.', true);
@@ -1266,7 +1508,10 @@
 
         try {
           if (!selectedQueryId) {
-            const createRes = await apiRequest('/query', 'POST', { query: sql });
+            const createRes = await apiRequest('/query', 'POST', {
+              query: sql,
+              database: selectedDatabase
+            });
             if (!createRes.ok) {
               renderStatus(
                 `Create failed (${createRes.status}): ${createRes.json.message || 'unknown error'}`,
@@ -1285,7 +1530,10 @@
             return;
           }
 
-          const updateRes = await apiRequest(`/query/${selectedQueryId}`, 'PUT', { query: sql });
+          const updateRes = await apiRequest(`/query/${selectedQueryId}`, 'PUT', {
+            query: sql,
+            database: selectedDatabase
+          });
           if (!updateRes.ok) {
             renderStatus(
               `Update failed (${updateRes.status}): ${updateRes.json.message || 'unknown error'}`,
@@ -1378,6 +1626,18 @@
         });
       });
 
+      databaseSelectEl.addEventListener('change', () => {
+        selectedDatabase = databaseSelectEl.value || null;
+        persistUiState();
+        refreshSchemaTree().catch((error) => {
+          renderStatus(`Failed to refresh schema: ${error.message}`, true);
+        });
+      });
+
+      schemaFilterInputEl.addEventListener('input', () => {
+        renderSchemaTree(schemaCache);
+      });
+
       toggleSchemaBtn.addEventListener('click', () => {
         setSchemaCollapsed(!schemaCollapsed);
       });
@@ -1398,9 +1658,28 @@
         }
       });
 
-      window.require(
-        ['vs/editor/editor.main'],
-        () => {
+      async function initializeAppState() {
+        await refreshDatabasesWithRetry(selectedDatabase);
+        await refreshSchemaTree();
+        await refreshQueryList(selectedQueryId);
+        if (selectedQueryId) {
+          await loadQueryById(selectedQueryId);
+        }
+      }
+
+      function startQueryListAutoRefresh() {
+        if (queryListTimer) {
+          clearInterval(queryListTimer);
+        }
+        queryListTimer = setInterval(() => {
+          refreshQueryList(selectedQueryId).catch((error) => {
+            renderStatus(`Failed to refresh query list: ${error.message}`, true);
+          });
+        }, 10000);
+      }
+
+      function onMonacoReady() {
+        try {
           editor = monaco.editor.create(document.getElementById('editor'), {
             value: 'SELECT current_timestamp AS ts;',
             language: 'sql',
@@ -1422,48 +1701,50 @@
             submitBtn.click();
           });
           scheduleValidation();
-          refreshQueryList(selectedQueryId)
+          initializeAppState()
             .then(async () => {
-              if (selectedQueryId) {
-                await loadQueryById(selectedQueryId);
-              }
+              startQueryListAutoRefresh();
             })
             .catch((error) => {
-              renderStatus(`Failed to load query list: ${error.message}`, true);
+              renderStatus(`Failed to initialize app state: ${error.message}`, true);
             });
-          refreshSchemaTree().catch((error) => {
-            renderStatus(`Failed to load schema: ${error.message}`, true);
-          });
-          queryListTimer = setInterval(() => {
-            refreshQueryList(selectedQueryId).catch((error) => {
-              renderStatus(`Failed to refresh query list: ${error.message}`, true);
-            });
-          }, 10000);
-        },
-        () => {
+        } catch (error) {
+          renderStatus(`Monaco initialization failed: ${error.message}`, true);
+          onMonacoUnavailable();
+        }
+      }
+
+      function onMonacoUnavailable() {
+        try {
           enableFallbackEditor('SELECT current_timestamp AS ts;');
           restoreUiState();
           setSchemaCollapsed(schemaCollapsed);
           setQueryListCollapsed(queryListCollapsed);
-          refreshQueryList(selectedQueryId)
+          initializeAppState()
             .then(async () => {
-              if (selectedQueryId) {
-                await loadQueryById(selectedQueryId);
-              }
+              startQueryListAutoRefresh();
             })
             .catch((error) => {
-              renderStatus(`Failed to load query list: ${error.message}`, true);
+              renderStatus(`Failed to initialize app state: ${error.message}`, true);
             });
-          refreshSchemaTree().catch((error) => {
-            renderStatus(`Failed to load schema: ${error.message}`, true);
-          });
-          queryListTimer = setInterval(() => {
-            refreshQueryList(selectedQueryId).catch((error) => {
-              renderStatus(`Failed to refresh query list: ${error.message}`, true);
-            });
-          }, 10000);
+        } catch (error) {
+          renderStatus(`Fallback initialization failed: ${error.message}`, true);
         }
-      );
+      }
+
+      if (typeof window.require === 'function') {
+        window.require(
+          ['vs/editor/editor.main'],
+          () => {
+            onMonacoReady();
+          },
+          () => {
+            onMonacoUnavailable();
+          }
+        );
+      } else {
+        onMonacoUnavailable();
+      }
     </script>
   </body>
 </html>
