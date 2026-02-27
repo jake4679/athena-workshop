@@ -3,14 +3,20 @@
 Minimal Node.js HTTP service for submitting and managing AWS Athena queries.
 
 ## Setup
-1. Copy `config.example.json` to `config.json` and set real values.
+1. Install MySQL locally (or ensure an accessible MySQL instance is available).
+2. Start the MySQL service.
+3. Create the application database:
+   ```sql
+   CREATE DATABASE athena_manager;
+   ```
+4. Copy `config.example.json` to `config.json` and set real values.
    - If you use named AWS CLI profiles or IAM Identity Center (SSO), set `aws.profile` in config to force the Node process to use the same profile.
    - When `aws.profile` is set, server startup clears `AWS_ACCESS_KEY_ID`/`AWS_SESSION_TOKEN` env credentials so stale env tokens cannot override profile-based auth.
-2. Install dependencies:
+5. Install dependencies:
    ```bash
    npm install
    ```
-3. Start server with config path:
+6. Start server with config path:
    ```bash
    node src/server.js --config ./config.json
    ```
