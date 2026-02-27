@@ -11,6 +11,13 @@
     "outputLocation": "s3://your-athena-query-results-bucket/prefix/",
     "workGroup": "primary"
   },
+  "openai": {
+    "apiKeyEnvVar": "OPENAI_API_KEY",
+    "apiKey": "",
+    "model": "gpt-5",
+    "baseURL": "https://api.openai.com/v1",
+    "timeoutMs": 30000
+  },
   "mysql": {
     "host": "127.0.0.1",
     "port": 3306,
