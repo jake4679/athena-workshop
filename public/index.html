@@ -103,6 +103,43 @@
         min-width: 0;
       }
 
+      .assistant-body {
+        display: grid;
+        gap: 10px;
+      }
+
+      .assistant-card.collapsed .assistant-body {
+        display: none;
+      }
+
+      .assistant-response {
+        min-height: 160px;
+        max-height: 60vh;
+        resize: vertical;
+        overflow: auto;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 10px 12px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.8rem;
+        line-height: 1.45;
+        white-space: pre-wrap;
+      }
+
+      .assistant-prompt {
+        width: 100%;
+        min-height: 90px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.82rem;
+        resize: vertical;
+        background: #fff;
+        color: var(--ink);
+      }
+
       .editor-shell {
         height: 260px;
         min-height: 160px;
@@ -489,6 +526,23 @@
         </section>
 
         <div class="main-stack">
+          <section id="assistantCard" class="card assistant-card">
+            <div class="section">
+              <div class="panel-header">
+                <h2 style="margin: 0; font-size: 1rem">Assistant</h2>
+                <button id="toggleAssistantBtn" class="btn-light icon-toggle" type="button">-</button>
+              </div>
+              <div class="assistant-body">
+                <div id="assistantResponse" class="assistant-response">Assistant responses will appear here.</div>
+                <textarea
+                  id="assistantPromptInput"
+                  class="assistant-prompt"
+                  placeholder="Ask the assistant to explain or fix syntax..."
+                ></textarea>
+              </div>
+            </div>
+          </section>
+
           <section class="card">
             <header class="header">
               <h1 class="title">Athena Query Console</h1>
@@ -582,6 +636,7 @@
       let selectedQueryId = null;
       let schemaCollapsed = false;
       let queryListCollapsed = false;
+      let assistantCollapsed = false;
       let schemaCache = { database: null, tables: [] };
       let schemaPrefetchGeneration = 0;
       let databaseList = [];
@@ -616,6 +671,10 @@
       const refreshListBtn = document.getElementById('refreshListBtn');
       const deleteQueryBtn = document.getElementById('deleteQueryBtn');
       const toggleQueryListBtn = document.getElementById('toggleQueryListBtn');
+      const assistantCardEl = document.getElementById('assistantCard');
+      const toggleAssistantBtn = document.getElementById('toggleAssistantBtn');
+      const assistantResponseEl = document.getElementById('assistantResponse');
+      const assistantPromptInputEl = document.getElementById('assistantPromptInput');
       const schemaTreeEl = document.getElementById('schemaTree');
       const databaseSelectEl = document.getElementById('databaseSelect');
       const schemaFilterInputEl = document.getElementById('schemaFilterInput');
@@ -773,10 +832,41 @@
         resultsEl.style.display = 'none';
         resultsDebugEl.textContent = `Debug: initializing Tabulator | columns=${columns.length} initialRows=${Array.isArray(initialData) ? initialData.length : 0}`;
 
+        function toHttpUrlOrNull(value) {
+          if (typeof value !== 'string') {
+            return null;
+          }
+          const trimmed = value.trim();
+          if (!trimmed) {
+            return null;
+          }
+          try {
+            const parsed = new URL(trimmed);
+            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+              return parsed.toString();
+            }
+          } catch (_error) {
+            return null;
+          }
+          return null;
+        }
+
+        function linkAwareCellFormatter(cell) {
+          const rawValue = cell.getValue();
+          const url = toHttpUrlOrNull(rawValue);
+          if (!url) {
+            return rawValue === null || rawValue === undefined ? '' : escapeHtml(String(rawValue));
+          }
+          const safeHref = escapeHtml(url);
+          const safeLabel = escapeHtml(String(rawValue));
+          return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${safeLabel}</a>`;
+        }
+
         const tableColumns = columns.map((name, index) => ({
           title: String(name),
           field: `c${index}`,
-          headerSort: false
+          headerSort: false,
+          formatter: linkAwareCellFormatter
         }));
         const normalizedInitialData = normalizeTabulatorData(columns, initialData);
         resultsDebugEl.textContent =
@@ -1022,6 +1112,13 @@
         persistUiState();
       }
 
+      function setAssistantCollapsed(nextCollapsed) {
+        assistantCollapsed = Boolean(nextCollapsed);
+        assistantCardEl.classList.toggle('collapsed', assistantCollapsed);
+        toggleAssistantBtn.textContent = assistantCollapsed ? '+' : '-';
+        persistUiState();
+      }
+
       function renderSchemaTree(schema) {
         const allTables = Array.isArray(schema?.tables) ? schema.tables : [];
         const filter = (schemaFilterInputEl.value || '').trim().toLowerCase();
@@ -1255,6 +1352,7 @@
             JSON.stringify({
               schemaCollapsed,
               queryListCollapsed,
+              assistantCollapsed,
               selectedQueryId,
               selectedDatabase
             })
@@ -1276,6 +1374,9 @@
           }
           if (typeof state.queryListCollapsed === 'boolean') {
             queryListCollapsed = state.queryListCollapsed;
+          }
+          if (typeof state.assistantCollapsed === 'boolean') {
+            assistantCollapsed = state.assistantCollapsed;
           }
           if (typeof state.selectedQueryId === 'string' && state.selectedQueryId.trim() !== '') {
             selectedQueryId = state.selectedQueryId;
@@ -1646,6 +1747,16 @@
         setQueryListCollapsed(!queryListCollapsed);
       });
 
+      toggleAssistantBtn.addEventListener('click', () => {
+        setAssistantCollapsed(!assistantCollapsed);
+      });
+
+      assistantPromptInputEl.addEventListener('input', () => {
+        if (assistantResponseEl.textContent === 'Assistant responses will appear here.') {
+          assistantResponseEl.textContent = '';
+        }
+      });
+
       window.addEventListener('beforeunload', () => {
         clearPolling();
         if (validateTimer) {
@@ -1696,6 +1807,7 @@
           restoreUiState();
           setSchemaCollapsed(schemaCollapsed);
           setQueryListCollapsed(queryListCollapsed);
+          setAssistantCollapsed(assistantCollapsed);
           setupMonacoEnhancements();
           editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
             submitBtn.click();
@@ -1720,6 +1832,7 @@
           restoreUiState();
           setSchemaCollapsed(schemaCollapsed);
           setQueryListCollapsed(queryListCollapsed);
+          setAssistantCollapsed(assistantCollapsed);
           initializeAppState()
             .then(async () => {
               startQueryListAutoRefresh();
