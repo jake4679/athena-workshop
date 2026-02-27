@@ -103,9 +103,20 @@
         min-width: 0;
       }
 
-      #editor {
+      .editor-shell {
         height: 260px;
+        min-height: 160px;
+        max-height: 70vh;
+        resize: vertical;
+        overflow: auto;
         border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fff;
+      }
+
+      #editor {
+        height: 100%;
+        border: 0;
         border-radius: 10px;
         overflow: hidden;
       }
@@ -113,14 +124,14 @@
       #editorFallback {
         display: none;
         width: 100%;
-        height: 260px;
-        border: 1px solid var(--border);
+        height: 100%;
+        border: 0;
         border-radius: 10px;
         padding: 12px;
         font-family: "IBM Plex Mono", monospace;
         font-size: 14px;
         line-height: 1.5;
-        resize: vertical;
+        resize: none;
       }
 
       .controls {
@@ -407,10 +418,10 @@
         }
 
         #editor {
-          height: 220px;
+          height: 100%;
         }
 
-        #editorFallback {
+        .editor-shell {
           height: 220px;
         }
 
@@ -453,8 +464,10 @@
             </header>
 
             <div class="section">
-              <div id="editor"></div>
-              <textarea id="editorFallback" aria-label="SQL editor fallback"></textarea>
+              <div class="editor-shell">
+                <div id="editor"></div>
+                <textarea id="editorFallback" aria-label="SQL editor fallback"></textarea>
+              </div>
               <div class="controls">
                 <button id="newQueryBtn" class="btn-light" type="button">New Query</button>
                 <button id="submitBtn" class="btn-accent" type="button">Submit Query</button>
