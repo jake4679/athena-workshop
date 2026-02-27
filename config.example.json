@@ -1,0 +1,21 @@
+{
+  "server": {
+    "port": 3000,
+    "pollIntervalMs": 3000,
+    "resultsDir": "./results"
+  },
+  "aws": {
+    "region": "us-east-1",
+    "database": "sampledb",
+    "outputLocation": "s3://your-athena-query-results-bucket/prefix/",
+    "workGroup": "primary"
+  },
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "root",
+    "password": "root",
+    "database": "athena_manager",
+    "connectionLimit": 10
+  }
+}
