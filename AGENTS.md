@@ -36,6 +36,12 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Assistant runs are asynchronous and polled via status endpoint.
 - Assistant cancellation is best-effort and should transition running sessions to cancelling/idle states.
 - Assistant provider calls (OpenAI/Anthropic) do not use a local backend timeout; runs complete when response returns or are cancelled/failed.
+- Assistant `run_read_query` tool safeguards:
+  - read-only SQL verification via backend parser/tokenizer guard
+  - hard row cap (`LIMIT 500`) enforced by backend query rewrite
+  - max 5 tool executions per assistant run
+  - optional result column cap (`maxColumns`, up to 50)
+  - audit logging of original SQL, rewritten SQL, limits, and execution stats
 
 ## Storage Requirements
 - Query metadata should be stored in a minimal DB (MySQL preferred).
@@ -93,6 +99,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Provider-agnostic assistant tool schemas are defined under `src/assistant/tools.js` and translated per provider.
 - Assistant integration supports `openai` and `anthropic` providers via `/query/:id/assistant/*` endpoints with a shared tool-call execution loop.
 - Assistant session seed instruction is configurable via `assistant.assistantSeedInstruction`.
+- Assistant tools include `run_read_query` for bounded read sampling (parser-guarded SELECT-only execution, max 500 rows, max 5 calls per run, capped columns, audit logging).
 - Static frontend served from `/` with Monaco SQL editor, SQL format action, submit, polling, and results view.
 - Monaco editor uses schema-aware autocomplete (keywords/tables/columns) and debounced backend validation markers.
 - Frontend includes collapsible assistant panel (response display + prompt input) above query editor.

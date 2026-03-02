@@ -340,6 +340,109 @@ class AthenaService {
       error: 'Validation timed out'
     };
   }
+
+  async executeReadQuery(queryText, options = {}) {
+    const timeoutMs = options.timeoutMs || 20000;
+    const pollIntervalMs = options.pollIntervalMs || 750;
+    const maxRows = Math.max(1, Math.min(500, Number(options.maxRows || 500)));
+    const maxColumns = Math.max(1, Math.min(50, Number(options.maxColumns || 30)));
+    const databaseName = await this.resolveDatabaseName(options.databaseName);
+    const submitted = await this.submitQuery(queryText, databaseName);
+    const athenaQueryExecutionId = submitted.athenaQueryExecutionId;
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const execution = await this.getExecutionState(athenaQueryExecutionId);
+      if (execution.state === 'SUCCEEDED') {
+        break;
+      }
+
+      if (execution.state === 'FAILED' || execution.state === 'CANCELLED') {
+        const error = new Error(execution.reason || `Read query ended in state: ${execution.state}`);
+        error.code = 'READ_QUERY_FAILED';
+        error.athenaState = execution.state;
+        error.athenaQueryExecutionId = athenaQueryExecutionId;
+        throw error;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+
+    if (Date.now() >= deadline) {
+      try {
+        await this.cancelQuery(athenaQueryExecutionId);
+      } catch (_error) {
+        // best effort only
+      }
+      const timeoutError = new Error(`Read query timed out after ${timeoutMs}ms`);
+      timeoutError.code = 'READ_QUERY_TIMEOUT';
+      timeoutError.athenaQueryExecutionId = athenaQueryExecutionId;
+      throw timeoutError;
+    }
+
+    let nextToken;
+    let columns = [];
+    const rows = [];
+
+    do {
+      const cmd = new GetQueryResultsCommand({
+        QueryExecutionId: athenaQueryExecutionId,
+        NextToken: nextToken,
+        MaxResults: 1000
+      });
+      const res = await this.client.send(cmd);
+      nextToken = res.NextToken;
+
+      if (columns.length === 0) {
+        columns = (res.ResultSet?.ResultSetMetadata?.ColumnInfo || []).map((c) => c.Name);
+      }
+
+      const pageRows = res.ResultSet?.Rows || [];
+      const normalized = pageRows.map((row) => (row.Data || []).map((cell) => cell.VarCharValue ?? null));
+      rows.push(...normalized);
+    } while (nextToken && rows.length <= maxRows + 1);
+
+    const hasHeaderRow =
+      rows.length > 0 &&
+      columns.length > 0 &&
+      rows[0].length === columns.length &&
+      rows[0].every((value, idx) => String(value ?? '') === String(columns[idx] ?? ''));
+
+    const dataRows = hasHeaderRow ? rows.slice(1) : rows.slice();
+    const rowCountBeforeCap = dataRows.length;
+    const truncatedRows = rowCountBeforeCap > maxRows;
+    const limitedRows = dataRows.slice(0, maxRows);
+
+    const columnCountBeforeCap = columns.length;
+    const truncatedColumns = columnCountBeforeCap > maxColumns;
+    const limitedColumns = columns.slice(0, maxColumns);
+    const limitedDataRows = limitedRows.map((row) => row.slice(0, maxColumns));
+
+    const executionDetails = await this.client.send(
+      new GetQueryExecutionCommand({
+        QueryExecutionId: athenaQueryExecutionId
+      })
+    );
+    const stats = executionDetails?.QueryExecution?.Statistics || {};
+
+    return {
+      athenaQueryExecutionId,
+      databaseName,
+      columns: limitedColumns,
+      rows: limitedDataRows,
+      rowCount: limitedDataRows.length,
+      truncatedRows,
+      truncatedColumns,
+      maxRows,
+      maxColumns,
+      stats: {
+        dataScannedBytes: Number(stats.DataScannedInBytes || 0),
+        engineExecutionTimeMs: Number(stats.EngineExecutionTimeInMillis || 0),
+        totalExecutionTimeMs: Number(stats.TotalExecutionTimeInMillis || 0),
+        queryQueueTimeMs: Number(stats.QueryQueueTimeInMillis || 0)
+      }
+    };
+  }
 }
 
 module.exports = {

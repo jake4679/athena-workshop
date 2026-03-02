@@ -48,6 +48,12 @@ node src/server.js --config ./config.json --port 4000
 - `POST /query/:id/assistant/cancel` (requests cancellation of active assistant run)
 - `GET /query/:id/assistant/messages` (returns persisted assistant conversation messages for the query)
 - Assistant provider requests (OpenAI/Anthropic) do not use a local backend timeout; runs complete when model response returns or when cancelled/failed.
+- Assistant includes `run_read_query` tool for self-serve sampling with backend safeguards:
+  - parser/tokenizer guard allows only SELECT-style read queries
+  - hard enforced outer `LIMIT 500`
+  - max 5 `run_read_query` calls per assistant run
+  - optional `maxColumns` (1-50) limits returned columns in tool output
+  - backend audit logs capture original SQL, rewritten SQL, limits, and execution stats
 - `GET /health`
 
 ## Frontend

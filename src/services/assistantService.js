@@ -2,10 +2,15 @@ const { v4: uuidv4 } = require('uuid');
 const { TOOL_NAMES, assistantToolDefinitions } = require('../assistant/tools');
 const { OpenAIProvider } = require('../assistant/providers/openaiProvider');
 const { AnthropicProvider } = require('../assistant/providers/anthropicProvider');
+const { rewriteReadQueryWithHardLimit } = require('../assistant/readQueryGuard');
 
 const MAX_SCHEMA_TABLES = 50;
 const MAX_COLUMNS_PER_TABLE = 50;
 const MAX_TOOL_ROUNDS = 6;
+const MAX_READ_QUERY_TOOL_CALLS = 5;
+const READ_QUERY_ROW_LIMIT = 500;
+const DEFAULT_READ_QUERY_MAX_COLUMNS = 30;
+const MAX_READ_QUERY_COLUMNS = 50;
 const DEFAULT_SEED_INSTRUCTION =
   'You are a SQL assistant for AWS Athena. Provide concise, practical guidance and valid Athena SQL.';
 
@@ -132,6 +137,25 @@ function mapStoredMessagesToAnthropicContext(messages, userPrompt) {
   };
 }
 
+function summarizeForLog(value, maxLength = 800) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  let text;
+  if (typeof value === 'string') {
+    text = value;
+  } else {
+    try {
+      text = JSON.stringify(value);
+    } catch (_error) {
+      text = String(value);
+    }
+  }
+
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...<truncated>` : text;
+}
+
 class AssistantService {
   constructor({ assistantStore, queryStore, athenaService, lockManager, config, logger }) {
     this.assistantStore = assistantStore;
@@ -225,7 +249,7 @@ class AssistantService {
     return { session, created: true };
   }
 
-  async executeTool(toolName, args) {
+  async executeTool(toolName, args, toolContext = {}) {
     if (toolName === TOOL_NAMES.LIST_DATABASES) {
       const databases = await this.athenaService.listDatabases();
       return { databases };
@@ -277,6 +301,109 @@ class AssistantService {
       };
     }
 
+    if (toolName === TOOL_NAMES.RUN_READ_QUERY) {
+      const queryId = toolContext.queryId || null;
+      const sessionId = toolContext.sessionId || null;
+      const usage = toolContext.usage || { readQueryCalls: 0 };
+
+      if (usage.readQueryCalls >= MAX_READ_QUERY_TOOL_CALLS) {
+        this.logger.warn('Assistant run_read_query blocked due to per-run budget', {
+          queryId,
+          sessionId,
+          maxCalls: MAX_READ_QUERY_TOOL_CALLS
+        });
+        return {
+          error: 'READ_QUERY_LIMIT_REACHED',
+          message: `run_read_query may only be called ${MAX_READ_QUERY_TOOL_CALLS} times per assistant run`
+        };
+      }
+
+      const queryText = typeof args?.query === 'string' ? args.query.trim() : '';
+      if (!queryText) {
+        return {
+          error: 'INVALID_REQUEST',
+          message: 'query is required'
+        };
+      }
+
+      const database = typeof args?.database === 'string' ? args.database.trim() : '';
+      const requestedMaxColumns = Number(args?.maxColumns || DEFAULT_READ_QUERY_MAX_COLUMNS);
+      const maxColumns = Math.max(1, Math.min(MAX_READ_QUERY_COLUMNS, requestedMaxColumns));
+
+      const guarded = rewriteReadQueryWithHardLimit(queryText, READ_QUERY_ROW_LIMIT);
+      if (!guarded.valid) {
+        this.logger.warn('Assistant run_read_query blocked by read guard', {
+          queryId,
+          sessionId,
+          reason: guarded.reason
+        });
+        return {
+          error: 'READ_QUERY_BLOCKED',
+          message: guarded.reason
+        };
+      }
+
+      usage.readQueryCalls += 1;
+      this.logger.info('Assistant run_read_query allowed', {
+        queryId,
+        sessionId,
+        readQueryCallCount: usage.readQueryCalls,
+        maxReadQueryCalls: MAX_READ_QUERY_TOOL_CALLS,
+        database: database || null,
+        originalQuery: guarded.normalizedQuery,
+        rewrittenQuery: guarded.rewrittenQuery,
+        enforcedRowLimit: guarded.enforcedRowLimit,
+        maxColumns
+      });
+
+      try {
+        const result = await this.athenaService.executeReadQuery(guarded.rewrittenQuery, {
+          databaseName: database || null,
+          maxRows: READ_QUERY_ROW_LIMIT,
+          maxColumns
+        });
+        this.logger.info('Assistant run_read_query completed', {
+          queryId,
+          sessionId,
+          readQueryCallCount: usage.readQueryCalls,
+          athenaQueryExecutionId: result.athenaQueryExecutionId,
+          rowCount: result.rowCount,
+          truncatedRows: result.truncatedRows,
+          truncatedColumns: result.truncatedColumns,
+          dataScannedBytes: result.stats?.dataScannedBytes || 0,
+          totalExecutionTimeMs: result.stats?.totalExecutionTimeMs || 0
+        });
+
+        return {
+          database: result.databaseName,
+          athenaQueryExecutionId: result.athenaQueryExecutionId,
+          rewrittenQuery: guarded.rewrittenQuery,
+          limits: {
+            maxRows: READ_QUERY_ROW_LIMIT,
+            maxColumns
+          },
+          rowCount: result.rowCount,
+          truncatedRows: result.truncatedRows,
+          truncatedColumns: result.truncatedColumns,
+          stats: result.stats,
+          columns: result.columns,
+          rows: result.rows
+        };
+      } catch (error) {
+        this.logger.error('Assistant run_read_query failed', {
+          queryId,
+          sessionId,
+          readQueryCallCount: usage.readQueryCalls,
+          message: error.message,
+          code: error.code || null
+        });
+        return {
+          error: 'READ_QUERY_EXECUTION_FAILED',
+          message: error.message
+        };
+      }
+    }
+
     throw new Error(`unsupported tool: ${toolName}`);
   }
 
@@ -309,7 +436,7 @@ class AssistantService {
     }
   }
 
-  async runOpenAiLoop(sessionId, userPrompt) {
+  async runOpenAiLoop(sessionId, userPrompt, runContext = {}) {
     const session = await this.assistantStore.getSessionById(sessionId);
     const messages = await this.assistantStore.listMessagesBySessionId(sessionId);
 
@@ -348,6 +475,15 @@ class AssistantService {
         let toolResult;
         const parsedArgs = call.argumentsJson;
 
+        this.logger.info('Assistant tool call started', {
+          queryId: runContext.queryId || null,
+          sessionId: runContext.sessionId || null,
+          provider: this.providerName,
+          toolName: call.name || null,
+          toolCallId: call.id || null,
+          toolArgs: summarizeForLog(parsedArgs === null ? call.argumentsRaw : parsedArgs)
+        });
+
         if (parsedArgs === null) {
           toolResult = {
             error: 'INVALID_TOOL_ARGUMENTS',
@@ -355,14 +491,31 @@ class AssistantService {
           };
         } else {
           try {
-            toolResult = await this.executeTool(call.name, parsedArgs);
+            toolResult = await this.executeTool(call.name, parsedArgs, runContext);
           } catch (error) {
+            this.logger.warn('Assistant tool call failed', {
+              queryId: runContext.queryId || null,
+              sessionId: runContext.sessionId || null,
+              provider: this.providerName,
+              toolName: call.name || null,
+              toolCallId: call.id || null,
+              error: error.message
+            });
             toolResult = {
               error: 'TOOL_EXECUTION_FAILED',
               message: error.message
             };
           }
         }
+
+        this.logger.info('Assistant tool call completed', {
+          queryId: runContext.queryId || null,
+          sessionId: runContext.sessionId || null,
+          provider: this.providerName,
+          toolName: call.name || null,
+          toolCallId: call.id || null,
+          toolResult: summarizeForLog(toolResult)
+        });
 
         await this.assistantStore.createMessage({
           id: uuidv4(),
@@ -404,7 +557,7 @@ class AssistantService {
     throw new Error(`Assistant tool loop exceeded maximum rounds (${MAX_TOOL_ROUNDS})`);
   }
 
-  async runAnthropicLoop(sessionId, userPrompt) {
+  async runAnthropicLoop(sessionId, userPrompt, runContext = {}) {
     const messages = await this.assistantStore.listMessagesBySessionId(sessionId);
     const context = mapStoredMessagesToAnthropicContext(messages, userPrompt);
 
@@ -440,6 +593,15 @@ class AssistantService {
         let toolResult;
         const parsedArgs = call.argumentsJson;
 
+        this.logger.info('Assistant tool call started', {
+          queryId: runContext.queryId || null,
+          sessionId: runContext.sessionId || null,
+          provider: this.providerName,
+          toolName: call.name || null,
+          toolCallId: call.id || null,
+          toolArgs: summarizeForLog(parsedArgs === null ? call.argumentsRaw : parsedArgs)
+        });
+
         if (parsedArgs === null) {
           toolResult = {
             error: 'INVALID_TOOL_ARGUMENTS',
@@ -447,14 +609,31 @@ class AssistantService {
           };
         } else {
           try {
-            toolResult = await this.executeTool(call.name, parsedArgs);
+            toolResult = await this.executeTool(call.name, parsedArgs, runContext);
           } catch (error) {
+            this.logger.warn('Assistant tool call failed', {
+              queryId: runContext.queryId || null,
+              sessionId: runContext.sessionId || null,
+              provider: this.providerName,
+              toolName: call.name || null,
+              toolCallId: call.id || null,
+              error: error.message
+            });
             toolResult = {
               error: 'TOOL_EXECUTION_FAILED',
               message: error.message
             };
           }
         }
+
+        this.logger.info('Assistant tool call completed', {
+          queryId: runContext.queryId || null,
+          sessionId: runContext.sessionId || null,
+          provider: this.providerName,
+          toolName: call.name || null,
+          toolCallId: call.id || null,
+          toolResult: summarizeForLog(toolResult)
+        });
 
         await this.assistantStore.createMessage({
           id: uuidv4(),
@@ -497,11 +676,11 @@ class AssistantService {
     throw new Error(`Assistant tool loop exceeded maximum rounds (${MAX_TOOL_ROUNDS})`);
   }
 
-  async runAssistantLoop(sessionId, userPrompt) {
+  async runAssistantLoop(sessionId, userPrompt, runContext = {}) {
     if (this.providerName === 'openai') {
-      return this.runOpenAiLoop(sessionId, userPrompt);
+      return this.runOpenAiLoop(sessionId, userPrompt, runContext);
     }
-    return this.runAnthropicLoop(sessionId, userPrompt);
+    return this.runAnthropicLoop(sessionId, userPrompt, runContext);
   }
 
   async send(queryId, prompt) {
@@ -541,7 +720,13 @@ class AssistantService {
       });
 
       setImmediate(() => {
-        this.runAssistantLoop(session.id, prompt).catch(async (error) => {
+        this.runAssistantLoop(session.id, prompt, {
+          queryId,
+          sessionId: session.id,
+          usage: {
+            readQueryCalls: 0
+          }
+        }).catch(async (error) => {
           this.logger.error('Assistant run failed', {
             queryId,
             sessionId: session.id,

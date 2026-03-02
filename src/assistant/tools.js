@@ -3,7 +3,8 @@ const TOOL_NAMES = {
   LIST_TABLES: 'list_tables',
   GET_TABLE_SCHEMA: 'get_table_schema',
   VALIDATE_QUERY: 'validate_query',
-  GET_QUERY: 'get_query'
+  GET_QUERY: 'get_query',
+  RUN_READ_QUERY: 'run_read_query'
 };
 
 const assistantToolDefinitions = [
@@ -83,6 +84,32 @@ const assistantToolDefinitions = [
         }
       },
       required: ['queryId'],
+      additionalProperties: false
+    }
+  },
+  {
+    name: TOOL_NAMES.RUN_READ_QUERY,
+    description:
+      'Execute a read-only Athena query sample. Safeguards: SELECT-style queries only, hard row cap of 500 via enforced outer LIMIT, max 5 calls per assistant run, and backend execution timeout. Use maxColumns to limit returned columns.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'SELECT-style SQL to run as read-only sample.'
+        },
+        database: {
+          type: ['string', 'null'],
+          description: 'Athena database identifier override. Set null to use default/current database.'
+        },
+        maxColumns: {
+          type: ['integer', 'null'],
+          description: 'Cap for returned column count (1-50). Set null to use backend default.',
+          minimum: 1,
+          maximum: 50
+        }
+      },
+      required: ['query', 'database', 'maxColumns'],
       additionalProperties: false
     }
   }
