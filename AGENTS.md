@@ -107,5 +107,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - `scripts/exercise-assistant.sh` validates assistant send/status/messages/cancel behavior, logs request/response pairs to a file (`LOG_FILE`), and supports prompt/query overrides (`ASSISTANT_PROMPT`, `QUERY_SQL`; empty `QUERY_SQL` uses `SELECT 1` only for query creation).
 - App construction is factored into `src/app.js` (`buildApp`) so endpoint tests can inject mocked services.
 - Service orchestration is factored into `src/services/appServices.js` (`createServices`) so tests can reuse production service wiring.
-- `tests/query.create.test.js` uses Node's built-in test runner and validates `POST /query` (202/400/500) with real `AthenaService` + `QueryStore` codepaths, mocking only AWS `client.send` and MySQL `pool.execute`.
-- `scripts/run-test-report.sh` writes timestamped test artifacts to `./results/test-runs/<timestamp>/` for iteration (`npm run test:post-query:report`).
+- Endpoint tests are split by endpoint into separate files (`tests/query.create.test.js`, `tests/query.cancel.test.js`).
+- Endpoint tests use Node's built-in test runner and validate `POST /query` and `POST /query/:id/cancel` with real `AthenaService` + `QueryStore` codepaths, mocking only AWS `client.send` and MySQL `pool.execute`.
+- Shared test harness utilities live under `tests/helpers/serviceHarness.js`.
+- `scripts/run-test-report.sh` writes timestamped test artifacts to `./results/test-runs/<timestamp>/` for iteration (`npm run test:post-query:report`, `npm run test:cancel-query:report`).

@@ -1,114 +1,18 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createQueryHandler } = require('../src/routes/queryHandlers');
-const { AthenaService } = require('../src/services/athenaService');
-const { QueryStore } = require('../src/services/queryStore');
-const { LockManager } = require('../src/services/lockManager');
-const { createServices } = require('../src/services/appServices');
-
-function createLoggerStub() {
-  return {
-    debug: () => {},
-    info: () => {},
-    warn: () => {},
-    error: () => {}
-  };
-}
-
-function createResponseStub() {
-  const output = {
-    statusCode: null,
-    body: null
-  };
-  const res = {
-    status(code) {
-      output.statusCode = code;
-      return this;
-    },
-    json(body) {
-      output.body = body;
-      return this;
-    }
-  };
-  return { res, output };
-}
-
-function createInMemoryPool() {
-  const rowsById = new Map();
-
-  return {
-    async execute(sql, params = []) {
-      const normalizedSql = String(sql).replace(/\s+/g, ' ').trim().toUpperCase();
-
-      if (normalizedSql.startsWith('INSERT INTO QUERIES')) {
-        const [id, name, databaseName, queryText, athenaQueryExecutionId, status, submittedAt, updatedAt] = params;
-        rowsById.set(id, {
-          id,
-          name,
-          database_name: databaseName,
-          query_text: queryText,
-          athena_query_execution_id: athenaQueryExecutionId,
-          status,
-          submitted_at: submittedAt,
-          updated_at: updatedAt,
-          completed_at: null,
-          cancelled_at: null,
-          result_path: null,
-          result_received_at: null,
-          error_message: null
-        });
-        return [{ affectedRows: 1 }];
-      }
-
-      if (normalizedSql.startsWith('SELECT * FROM QUERIES WHERE ID = ?')) {
-        const id = params[0];
-        const row = rowsById.get(id);
-        return [row ? [row] : []];
-      }
-
-      throw new Error(`Unsupported SQL in test pool: ${sql}`);
-    }
-  };
-}
-
-function createServicesWithRealStack({ athenaSendImpl }) {
-  const pool = createInMemoryPool();
-  const queryStore = new QueryStore(pool);
-  const athenaService = new AthenaService({
-    aws: {
-      region: 'us-east-1',
-      outputLocation: 's3://unit-test-results/prefix/',
-      workGroup: 'primary'
-    },
-    server: {
-      resultsDir: './results/test-query-create'
-    }
-  });
-  athenaService.client.send = athenaSendImpl;
-
-  const assistantService = {
-    send: async () => ({ error: 'NOT_USED' }),
-    getStatus: async () => ({ error: 'NOT_USED' }),
-    cancel: async () => ({ error: 'NOT_USED' }),
-    listMessages: async () => ({ error: 'NOT_USED' })
-  };
-
-  return createServices({
-    queryStore,
-    assistantService,
-    athenaService,
-    lockManager: new LockManager(),
-    logger: createLoggerStub()
-  });
-}
+const {
+  createLoggerStub,
+  createResponseStub,
+  createServicesWithRealStack
+} = require('./helpers/serviceHarness');
 
 test('POST /query returns 202 and query metadata when submission succeeds', async () => {
-  const sentCommands = [];
-  const services = createServicesWithRealStack({
+  const { services, sentCommands } = createServicesWithRealStack({
     athenaSendImpl: async (command) => {
-      sentCommands.push(command);
       return { QueryExecutionId: 'athena-qe-1' };
-    }
+    },
+    resultsDir: './results/test-query-create'
   });
   const handler = createQueryHandler({ services, logger: createLoggerStub() });
   const req = {
@@ -150,10 +54,11 @@ test('POST /query returns 400 when query is missing', async () => {
 });
 
 test('POST /query returns 500 when service throws', async () => {
-  const services = createServicesWithRealStack({
+  const { services } = createServicesWithRealStack({
     athenaSendImpl: async () => {
       throw new Error('athena unavailable');
-    }
+    },
+    resultsDir: './results/test-query-create'
   });
   const handler = createQueryHandler({ services, logger: createLoggerStub() });
   const { res, output } = createResponseStub();

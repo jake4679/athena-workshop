@@ -2,8 +2,8 @@
 set -euo pipefail
 
 STAMP="$(date -u +%Y%m%d-%H%M%S)"
-OUT_DIR="./results/test-runs/$STAMP"
-mkdir -p "$OUT_DIR"
+mkdir -p "./results/test-runs"
+OUT_DIR="$(mktemp -d "./results/test-runs/${STAMP}-XXXXXX")"
 
 echo "Writing test artifacts to $OUT_DIR"
 echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$OUT_DIR/meta.txt"

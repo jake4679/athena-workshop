@@ -9,7 +9,9 @@
     "start:dev": "node src/server.js --config ./config.json",
     "test": "node --test",
     "test:post-query": "node --test tests/query.create.test.js",
-    "test:post-query:report": "bash ./scripts/run-test-report.sh tests/query.create.test.js"
+    "test:post-query:report": "bash ./scripts/run-test-report.sh tests/query.create.test.js",
+    "test:cancel-query": "node --test tests/query.cancel.test.js",
+    "test:cancel-query:report": "bash ./scripts/run-test-report.sh tests/query.cancel.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-athena": "^3.864.0",

@@ -104,8 +104,16 @@ Environment overrides for assistant exercise:
   npm run test:post-query
   ```
 - The pilot test exercises real `AthenaService` and `QueryStore` codepaths while mocking only the AWS client `send` call and MySQL `pool.execute` interface.
+- Run the mocked `POST /query/:id/cancel` endpoint test:
+  ```bash
+  npm run test:cancel-query
+  ```
 - Run the same test with artifact logging for iteration:
   ```bash
   npm run test:post-query:report
   ```
   This writes timestamped outputs under `./results/test-runs/<timestamp>/` including console output and run metadata.
+  A cancel-endpoint report variant is also available:
+  ```bash
+  npm run test:cancel-query:report
+  ```
