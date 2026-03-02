@@ -106,5 +106,6 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - `scripts/exercise.sh` validates base API behavior plus paginated results behavior, and supports SQL overrides via env vars (`QUERY1_SQL`, `QUERY2_SQL`, `PAGINATION_SQL`).
 - `scripts/exercise-assistant.sh` validates assistant send/status/messages/cancel behavior, logs request/response pairs to a file (`LOG_FILE`), and supports prompt/query overrides (`ASSISTANT_PROMPT`, `QUERY_SQL`; empty `QUERY_SQL` uses `SELECT 1` only for query creation).
 - App construction is factored into `src/app.js` (`buildApp`) so endpoint tests can inject mocked services.
-- `tests/query.create.test.js` uses Node's built-in test runner with mocked services to validate `POST /query` contract behavior (202/400/500 paths).
+- Service orchestration is factored into `src/services/appServices.js` (`createServices`) so tests can reuse production service wiring.
+- `tests/query.create.test.js` uses Node's built-in test runner and validates `POST /query` (202/400/500) with real `AthenaService` + `QueryStore` codepaths, mocking only AWS `client.send` and MySQL `pool.execute`.
 - `scripts/run-test-report.sh` writes timestamped test artifacts to `./results/test-runs/<timestamp>/` for iteration (`npm run test:post-query:report`).

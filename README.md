@@ -103,6 +103,7 @@ Environment overrides for assistant exercise:
   ```bash
   npm run test:post-query
   ```
+- The pilot test exercises real `AthenaService` and `QueryStore` codepaths while mocking only the AWS client `send` call and MySQL `pool.execute` interface.
 - Run the same test with artifact logging for iteration:
   ```bash
   npm run test:post-query:report
