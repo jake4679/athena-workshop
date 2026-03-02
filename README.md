@@ -45,11 +45,16 @@ node src/server.js --config ./config.json --port 4000
 - `GET /query/:id/assistant/status` (returns assistant run state for the query)
 - `POST /query/:id/assistant/cancel` (requests cancellation of active assistant run)
 - `GET /query/:id/assistant/messages` (returns persisted assistant conversation messages for the query)
+- Assistant OpenAI requests do not use a local backend timeout; runs complete when model response returns or when cancelled/failed.
 - `GET /health`
 
 ## Frontend
 - `GET /` serves a minimal HTML page with:
-- Collapsible assistant panel with response area and prompt input (frontend scaffold)
+- Collapsible assistant panel with response area, prompt input, run status, and elapsed timer
+- Assistant prompt send/cancel controls backed by `/query/:id/assistant/*` APIs
+- Assistant prompt submit via `Cmd+Enter` / `Ctrl+Enter` when prompt textarea is focused
+- Assistant run polling (`/assistant/status`) and conversation rendering (`/assistant/messages`)
+- Assistant response bubbles include a `Use` action to copy that response into the SQL editor
 - Monaco SQL editor
 - Athena database selector persisted in browser local storage
 - Monaco autocomplete for SQL keywords, table names, and columns

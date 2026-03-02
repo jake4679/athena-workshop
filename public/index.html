@@ -124,7 +124,70 @@
         font-family: "IBM Plex Mono", monospace;
         font-size: 0.8rem;
         line-height: 1.45;
+      }
+
+      .assistant-thread {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .assistant-empty {
+        color: var(--muted);
+      }
+
+      .assistant-msg {
+        max-width: 88%;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        padding: 8px 10px;
         white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        position: relative;
+      }
+
+      .assistant-msg-wrap {
+        position: relative;
+        display: flex;
+      }
+
+      .assistant-msg-wrap-user {
+        justify-content: flex-end;
+      }
+
+      .assistant-msg-wrap-assistant,
+      .assistant-msg-wrap-tool {
+        justify-content: flex-start;
+      }
+
+      .assistant-msg-user {
+        background: #e5f1ff;
+      }
+
+      .assistant-msg-assistant {
+        background: #f3f7eb;
+      }
+
+      .assistant-msg-tool {
+        background: #f7f7f8;
+        color: #4b5563;
+      }
+
+      .assistant-use-btn {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        border: 1px solid var(--border);
+        background: #fff;
+        color: var(--ink);
+        border-radius: 6px;
+        font-size: 0.68rem;
+        padding: 2px 6px;
+        cursor: pointer;
+      }
+
+      .assistant-msg-with-use {
+        padding-top: 22px;
       }
 
       .assistant-prompt {
@@ -138,6 +201,30 @@
         resize: vertical;
         background: #fff;
         color: var(--ink);
+      }
+
+      .assistant-toolbar {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+
+      .assistant-meta {
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-family: "IBM Plex Mono", monospace;
+      }
+
+      .assistant-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .assistant-actions button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
       }
 
       .editor-shell {
@@ -539,6 +626,13 @@
                   class="assistant-prompt"
                   placeholder="Ask the assistant to explain or fix syntax..."
                 ></textarea>
+                <div class="assistant-toolbar">
+                  <div id="assistantMeta" class="assistant-meta">Status: idle | Elapsed: 00:00</div>
+                  <div class="assistant-actions">
+                    <button id="sendAssistantBtn" class="btn-accent" type="button">Send</button>
+                    <button id="cancelAssistantBtn" class="btn-light" type="button">Cancel</button>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
@@ -642,6 +736,12 @@
       let databaseList = [];
       let selectedDatabase = null;
       let validateTimer = null;
+      let assistantStatusTimer = null;
+      let assistantElapsedTimer = null;
+      let assistantRunStartedAt = null;
+      let assistantRunStatus = 'IDLE';
+      let assistantPollQueryId = null;
+      let assistantVisibleMessages = [];
       let completionProviderRegistered = false;
       const VALIDATION_DEBOUNCE_MS = 650;
       const UI_STATE_STORAGE_KEY = 'athena_query_console_ui_state_v1';
@@ -675,6 +775,9 @@
       const toggleAssistantBtn = document.getElementById('toggleAssistantBtn');
       const assistantResponseEl = document.getElementById('assistantResponse');
       const assistantPromptInputEl = document.getElementById('assistantPromptInput');
+      const assistantMetaEl = document.getElementById('assistantMeta');
+      const sendAssistantBtn = document.getElementById('sendAssistantBtn');
+      const cancelAssistantBtn = document.getElementById('cancelAssistantBtn');
       const schemaTreeEl = document.getElementById('schemaTree');
       const databaseSelectEl = document.getElementById('databaseSelect');
       const schemaFilterInputEl = document.getElementById('schemaFilterInput');
@@ -714,6 +817,110 @@
         statusEl.textContent = message;
         statusEl.classList.toggle('status-err', Boolean(isError));
         statusEl.classList.toggle('status-ok', !isError);
+      }
+
+      function formatElapsed(ms) {
+        const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        if (hours > 0) {
+          return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+      }
+
+      function stopAssistantElapsedTimer() {
+        if (assistantElapsedTimer) {
+          clearInterval(assistantElapsedTimer);
+          assistantElapsedTimer = null;
+        }
+      }
+
+      function updateAssistantMeta() {
+        const statusText = String(assistantRunStatus || 'IDLE').toLowerCase();
+        let elapsedText = '00:00';
+        if (assistantRunStartedAt) {
+          const elapsed = Date.now() - assistantRunStartedAt.getTime();
+          elapsedText = formatElapsed(elapsed);
+        }
+        assistantMetaEl.textContent = `Status: ${statusText} | Elapsed: ${elapsedText}`;
+      }
+
+      function startAssistantElapsedTimer(startedAtIso) {
+        stopAssistantElapsedTimer();
+        assistantRunStartedAt = startedAtIso ? new Date(startedAtIso) : null;
+        updateAssistantMeta();
+        if (!assistantRunStartedAt || Number.isNaN(assistantRunStartedAt.getTime())) {
+          assistantRunStartedAt = null;
+          return;
+        }
+        assistantElapsedTimer = setInterval(() => {
+          updateAssistantMeta();
+        }, 1000);
+      }
+
+      function setAssistantRunStatus(status, runStartedAt) {
+        assistantRunStatus = status || 'IDLE';
+        if (assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING') {
+          startAssistantElapsedTimer(runStartedAt || (assistantRunStartedAt ? assistantRunStartedAt.toISOString() : null));
+        } else {
+          if (runStartedAt) {
+            assistantRunStartedAt = new Date(runStartedAt);
+          }
+          stopAssistantElapsedTimer();
+          updateAssistantMeta();
+        }
+
+        const running = assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING';
+        sendAssistantBtn.disabled = running;
+        cancelAssistantBtn.disabled = !running;
+      }
+
+      function renderAssistantMessages(messages) {
+        assistantVisibleMessages = [];
+        if (!Array.isArray(messages) || messages.length === 0) {
+          assistantResponseEl.innerHTML = '<div class="assistant-empty">Assistant responses will appear here.</div>';
+          return;
+        }
+
+        const visible = messages.filter((message) => ['user', 'assistant', 'tool'].includes(message.role));
+        if (visible.length === 0) {
+          assistantResponseEl.innerHTML = '<div class="assistant-empty">Assistant responses will appear here.</div>';
+          return;
+        }
+
+        assistantVisibleMessages = visible.map((message) => ({
+          role: String(message.role || '').toLowerCase(),
+          content: String(message.content || '').trim()
+        }));
+
+        const html = visible
+          .map((message, index) => {
+            const role = String(message.role || '').toLowerCase();
+            const roleClass =
+              role === 'user'
+                ? 'assistant-msg-user'
+                : role === 'assistant'
+                  ? 'assistant-msg-assistant'
+                  : 'assistant-msg-tool';
+            const wrapClass =
+              role === 'user'
+                ? 'assistant-msg-wrap-user'
+                : role === 'assistant'
+                  ? 'assistant-msg-wrap-assistant'
+                  : 'assistant-msg-wrap-tool';
+            const content = String(message.content || '').trim() || '(empty)';
+            const useButton =
+              role === 'assistant'
+                ? `<button class="assistant-use-btn" type="button" data-assistant-index="${index}">Use</button>`
+                : '';
+            const extraClass = role === 'assistant' ? 'assistant-msg-with-use' : '';
+            return `<div class="assistant-msg-wrap ${wrapClass}"><div class="assistant-msg ${roleClass} ${extraClass}">${useButton}${escapeHtml(content)}</div></div>`;
+          })
+          .join('');
+        assistantResponseEl.innerHTML = `<div class="assistant-thread">${html}</div>`;
+        assistantResponseEl.scrollTop = assistantResponseEl.scrollHeight;
       }
 
       function renderJson(data) {
@@ -1427,14 +1634,169 @@
           setSelectedQuery(preferSelectId);
         } else if (selectedQueryId && !queries.find((q) => q.id === selectedQueryId)) {
           setSelectedQuery(null);
+          syncAssistantForQuery(null).catch(() => {
+            // ignore assistant reset failures
+          });
         }
 
         renderQueryList(queries);
       }
 
+      function clearAssistantStatusPolling() {
+        if (assistantStatusTimer) {
+          clearInterval(assistantStatusTimer);
+          assistantStatusTimer = null;
+        }
+        assistantPollQueryId = null;
+      }
+
+      async function fetchAssistantMessages(queryId) {
+        if (!queryId) {
+          renderAssistantMessages([]);
+          return;
+        }
+
+        const res = await apiRequest(`/query/${queryId}/assistant/messages`, 'GET');
+        if (!res.ok) {
+          renderAssistantMessages([]);
+          return;
+        }
+        renderAssistantMessages(Array.isArray(res.json.messages) ? res.json.messages : []);
+      }
+
+      async function pollAssistantStatus(queryId, options = {}) {
+        if (!queryId) {
+          clearAssistantStatusPolling();
+          setAssistantRunStatus('IDLE', null);
+          return;
+        }
+        if (selectedQueryId !== queryId) {
+          clearAssistantStatusPolling();
+          return;
+        }
+
+        const shouldRefreshMessagesOnIdle = options.refreshMessagesOnIdle !== false;
+        const res = await apiRequest(`/query/${queryId}/assistant/status`, 'GET');
+        if (!res.ok) {
+          renderStatus(`Assistant status failed (${res.status})`, true);
+          return;
+        }
+
+        const nextStatus = res.json.runStatus || 'IDLE';
+        setAssistantRunStatus(nextStatus, res.json.runStartedAt || null);
+        if (nextStatus === 'FAILED' && res.json.lastErrorMessage) {
+          renderStatus(`Assistant failed: ${res.json.lastErrorMessage}`, true);
+        }
+
+        if (nextStatus === 'RUNNING' || nextStatus === 'CANCELLING') {
+          return;
+        }
+
+        clearAssistantStatusPolling();
+        if (shouldRefreshMessagesOnIdle) {
+          await fetchAssistantMessages(queryId);
+        }
+      }
+
+      function startAssistantStatusPolling(queryId) {
+        clearAssistantStatusPolling();
+        assistantPollQueryId = queryId;
+        pollAssistantStatus(queryId).catch((error) => {
+          renderStatus(`Assistant polling error: ${error.message}`, true);
+        });
+
+        assistantStatusTimer = setInterval(() => {
+          if (!assistantPollQueryId) {
+            clearAssistantStatusPolling();
+            return;
+          }
+          pollAssistantStatus(assistantPollQueryId).catch((error) => {
+            renderStatus(`Assistant polling error: ${error.message}`, true);
+          });
+        }, 2000);
+      }
+
+      async function syncAssistantForQuery(queryId) {
+        if (!queryId) {
+          clearAssistantStatusPolling();
+          stopAssistantElapsedTimer();
+          assistantRunStartedAt = null;
+          setAssistantRunStatus('IDLE', null);
+          renderAssistantMessages([]);
+          return;
+        }
+
+        await pollAssistantStatus(queryId, { refreshMessagesOnIdle: false });
+        await fetchAssistantMessages(queryId);
+        if (assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING') {
+          startAssistantStatusPolling(queryId);
+        }
+      }
+
+      async function sendAssistantPrompt() {
+        if (!selectedQueryId) {
+          renderStatus('Select or create a query before messaging assistant.', true);
+          return;
+        }
+
+        const prompt = (assistantPromptInputEl.value || '').trim();
+        if (!prompt) {
+          renderStatus('Assistant prompt is required.', true);
+          return;
+        }
+
+        sendAssistantBtn.disabled = true;
+        try {
+          const res = await apiRequest(`/query/${selectedQueryId}/assistant/send`, 'POST', { prompt });
+          if (res.ok) {
+            assistantPromptInputEl.value = '';
+            setAssistantRunStatus(res.json.runStatus || 'RUNNING', res.json.runStartedAt || null);
+            renderStatus('Assistant prompt submitted.', false);
+            startAssistantStatusPolling(selectedQueryId);
+            return;
+          }
+
+          if (res.status === 409 && res.json?.error === 'ASSISTANT_RUN_ACTIVE') {
+            setAssistantRunStatus(res.json.runStatus || 'RUNNING', assistantRunStartedAt ? assistantRunStartedAt.toISOString() : null);
+            renderStatus('Assistant run already in progress.', true);
+            startAssistantStatusPolling(selectedQueryId);
+            return;
+          }
+
+          renderStatus(`Assistant send failed (${res.status}): ${res.json.message || 'unknown error'}`, true);
+        } catch (error) {
+          renderStatus(`Assistant send error: ${error.message}`, true);
+        } finally {
+          if (!(assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING')) {
+            sendAssistantBtn.disabled = false;
+          }
+        }
+      }
+
+      async function cancelAssistantRun() {
+        if (!selectedQueryId) {
+          renderStatus('Select a query to cancel assistant run.', true);
+          return;
+        }
+
+        try {
+          const res = await apiRequest(`/query/${selectedQueryId}/assistant/cancel`, 'POST', {});
+          if (!res.ok) {
+            renderStatus(`Assistant cancel failed (${res.status}): ${res.json.message || 'unknown error'}`, true);
+            return;
+          }
+          setAssistantRunStatus(res.json.runStatus || 'CANCELLING', assistantRunStartedAt ? assistantRunStartedAt.toISOString() : null);
+          renderStatus('Assistant cancellation requested.', false);
+          startAssistantStatusPolling(selectedQueryId);
+        } catch (error) {
+          renderStatus(`Assistant cancel error: ${error.message}`, true);
+        }
+      }
+
       async function loadQueryById(id) {
         setSelectedQuery(id);
         await refreshQueryList(id);
+        await syncAssistantForQuery(id);
 
         const statusRes = await apiRequest(`/query/${id}/status`, 'GET');
         if (!statusRes.ok) {
@@ -1520,6 +1882,10 @@
         });
         setEditorValue('');
         renderJson({ message: 'No query selected yet.' });
+        assistantPromptInputEl.value = '';
+        syncAssistantForQuery(null).catch(() => {
+          // ignore assistant reset failures
+        });
       }
 
       async function fetchResults(id) {
@@ -1627,6 +1993,7 @@
             renderStatus(`Query submitted: ${id}`);
             renderJson({ message: `Query ${id} submitted. Waiting for results...` });
             await refreshQueryList(id);
+            await syncAssistantForQuery(id);
             startPolling(id);
             return;
           }
@@ -1751,14 +2118,62 @@
         setAssistantCollapsed(!assistantCollapsed);
       });
 
-      assistantPromptInputEl.addEventListener('input', () => {
-        if (assistantResponseEl.textContent === 'Assistant responses will appear here.') {
-          assistantResponseEl.textContent = '';
+      sendAssistantBtn.addEventListener('click', () => {
+        sendAssistantPrompt().catch((error) => {
+          renderStatus(`Assistant send error: ${error.message}`, true);
+        });
+      });
+
+      cancelAssistantBtn.addEventListener('click', () => {
+        cancelAssistantRun().catch((error) => {
+          renderStatus(`Assistant cancel error: ${error.message}`, true);
+        });
+      });
+
+      assistantPromptInputEl.addEventListener('keydown', (event) => {
+        if (!isSubmitShortcut(event)) {
+          return;
         }
+        event.preventDefault();
+        sendAssistantPrompt().catch((error) => {
+          renderStatus(`Assistant send error: ${error.message}`, true);
+        });
+      });
+
+      assistantResponseEl.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+
+        const button = target.closest('button[data-assistant-index]');
+        if (!button) {
+          return;
+        }
+
+        const index = Number(button.getAttribute('data-assistant-index'));
+        if (!Number.isInteger(index) || index < 0 || index >= assistantVisibleMessages.length) {
+          return;
+        }
+
+        const message = assistantVisibleMessages[index];
+        if (!message || message.role !== 'assistant') {
+          return;
+        }
+
+        setEditorValue(message.content || '');
+        if (fallbackMode) {
+          fallbackEditorEl.focus();
+        } else if (editor) {
+          editor.focus();
+        }
+        renderStatus('Copied assistant response into query editor.', false);
       });
 
       window.addEventListener('beforeunload', () => {
         clearPolling();
+        clearAssistantStatusPolling();
+        stopAssistantElapsedTimer();
         if (validateTimer) {
           clearTimeout(validateTimer);
           validateTimer = null;
@@ -1808,6 +2223,7 @@
           setSchemaCollapsed(schemaCollapsed);
           setQueryListCollapsed(queryListCollapsed);
           setAssistantCollapsed(assistantCollapsed);
+          setAssistantRunStatus('IDLE', null);
           setupMonacoEnhancements();
           editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
             submitBtn.click();
@@ -1833,6 +2249,7 @@
           setSchemaCollapsed(schemaCollapsed);
           setQueryListCollapsed(queryListCollapsed);
           setAssistantCollapsed(assistantCollapsed);
+          setAssistantRunStatus('IDLE', null);
           initializeAppState()
             .then(async () => {
               startQueryListAutoRefresh();

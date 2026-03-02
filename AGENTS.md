@@ -34,6 +34,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Only one assistant run can be active per query at a time; concurrent sends for the same query are rejected.
 - Assistant runs are asynchronous and polled via status endpoint.
 - Assistant cancellation is best-effort and should transition running sessions to cancelling/idle states.
+- Assistant OpenAI calls do not use a local backend timeout; runs complete when response returns or are cancelled/failed.
 
 ## Storage Requirements
 - Query metadata should be stored in a minimal DB (MySQL preferred).
@@ -86,6 +87,8 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Static frontend served from `/` with Monaco SQL editor, SQL format action, submit, polling, and results view.
 - Monaco editor uses schema-aware autocomplete (keywords/tables/columns) and debounced backend validation markers.
 - Frontend includes collapsible assistant panel (response display + prompt input) above query editor.
+- Frontend assistant panel includes send/cancel controls, run status polling, elapsed run timer, and per-query conversation rendering from backend messages.
+- Assistant response bubbles include a `Use` action that copies selected assistant output into the SQL editor.
 - Frontend includes right-side query list populated from `/query`; selecting an item loads SQL and associated state/results.
 - Right-side query list includes delete control for selected query and clears UI state after deletion.
 - Results metadata panel includes `name` alongside Query ID/Status/timestamps.

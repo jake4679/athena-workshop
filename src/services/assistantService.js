@@ -96,7 +96,6 @@ class AssistantService {
     this.logger = logger;
     this.model = config.openai?.model || 'gpt-5';
     this.baseURL = (config.openai?.baseURL || 'https://api.openai.com/v1').replace(/\/$/, '');
-    this.timeoutMs = Number(config.openai?.timeoutMs || 30000);
     this.apiKey = resolveOpenAiApiKey(config);
   }
 
@@ -218,36 +217,29 @@ class AssistantService {
   }
 
   async callOpenAi({ input, previousResponseId }) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      const response = await fetch(`${this.baseURL}/responses`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: this.model,
-          input,
-          tools: assistantTools,
-          ...(previousResponseId ? { previous_response_id: previousResponseId } : {})
-        }),
-        signal: controller.signal
-      });
+    const response = await fetch(`${this.baseURL}/responses`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: this.model,
+        input,
+        tools: assistantTools,
+        ...(previousResponseId ? { previous_response_id: previousResponseId } : {})
+      })
+    });
 
-      const json = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const errMessage = json?.error?.message || `OpenAI request failed with HTTP ${response.status}`;
-        const error = new Error(errMessage);
-        error.code = 'OPENAI_REQUEST_FAILED';
-        throw error;
-      }
-
-      return json;
-    } finally {
-      clearTimeout(timeout);
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const errMessage = json?.error?.message || `OpenAI request failed with HTTP ${response.status}`;
+      const error = new Error(errMessage);
+      error.code = 'OPENAI_REQUEST_FAILED';
+      throw error;
     }
+
+    return json;
   }
 
   async shouldCancel(sessionId) {
