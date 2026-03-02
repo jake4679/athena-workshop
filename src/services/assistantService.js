@@ -96,6 +96,9 @@ class AssistantService {
     this.logger = logger;
     this.model = config.openai?.model || 'gpt-5';
     this.baseURL = (config.openai?.baseURL || 'https://api.openai.com/v1').replace(/\/$/, '');
+    this.assistantSeedInstruction =
+      config.openai?.assistantSeedInstruction ||
+      'You are a SQL assistant for AWS Athena. Provide concise, practical guidance and valid Athena SQL.';
     this.apiKey = resolveOpenAiApiKey(config);
   }
 
@@ -125,8 +128,7 @@ class AssistantService {
     }
 
     const seedPayload = {
-      instruction:
-        'You are a SQL assistant for AWS Athena. Provide concise, practical guidance and valid Athena SQL.',
+      instruction: this.assistantSeedInstruction,
       selectedDatabase: databaseName,
       currentQueryText: query.queryText || null,
       schema: schemaSummary

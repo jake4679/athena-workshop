@@ -13,6 +13,7 @@ Minimal Node.js HTTP service for submitting and managing AWS Athena queries.
    - If you use named AWS CLI profiles or IAM Identity Center (SSO), set `aws.profile` in config to force the Node process to use the same profile.
    - When `aws.profile` is set, server startup clears `AWS_ACCESS_KEY_ID`/`AWS_SESSION_TOKEN` env credentials so stale env tokens cannot override profile-based auth.
    - OpenAI settings are configured under `openai` (supports env-var key and optional config-file key fallback).
+   - `openai.assistantSeedInstruction` controls the default instruction injected when a query's assistant session is first created.
 5. Install dependencies:
    ```bash
    npm install

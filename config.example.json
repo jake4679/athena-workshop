@@ -16,7 +16,7 @@
     "apiKey": "",
     "model": "gpt-5",
     "baseURL": "https://api.openai.com/v1",
-    "timeoutMs": 30000
+    "assistantSeedInstruction": "You are a SQL assistant for AWS Athena. Provide concise, practical guidance and valid Athena SQL."
   },
   "mysql": {
     "host": "127.0.0.1",

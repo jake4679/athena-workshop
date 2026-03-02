@@ -50,6 +50,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - OpenAI settings should be present in config (`openai` block), supporting:
   - env-var key resolution
   - optional config-file key fallback
+  - configurable `assistantSeedInstruction` for first-message session seeding
 - Config file path should be passed via CLI when launching server.
 
 ## Documentation Requirements
@@ -84,6 +85,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Config loaded from `--config <path>`.
 - OpenAI tool schemas are defined under `src/openai` (`toolSchemas.js` / `index.js`) and used by assistant runtime.
 - OpenAI assistant integration is active via `/query/:id/assistant/*` endpoints with tool-call execution loop.
+- Assistant session seed instruction is configurable via `openai.assistantSeedInstruction`.
 - Static frontend served from `/` with Monaco SQL editor, SQL format action, submit, polling, and results view.
 - Monaco editor uses schema-aware autocomplete (keywords/tables/columns) and debounced backend validation markers.
 - Frontend includes collapsible assistant panel (response display + prompt input) above query editor.
