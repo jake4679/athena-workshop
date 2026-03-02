@@ -1,13 +1,12 @@
 # OpenAI Assistant Tool Schemas
 
-This folder contains OpenAI function-tool schema definitions only.
+This folder contains OpenAI function-tool schema definitions and exports used by assistant runtime code.
 
 Current scope:
 - Tool names/constants.
 - Strict JSON schema function definitions for assistant query support.
 
-Out of scope (intentionally not implemented yet):
-- OpenAI client initialization.
-- Responses/Conversations API calls.
-- Tool execution handlers.
-- Session orchestration.
+Implemented outside this folder:
+- OpenAI Responses API client flow (see `src/services/assistantService.js`).
+- Tool execution handlers (`list_databases`, `list_tables`, `get_table_schema`, `validate_query`, `get_query`).
+- Query-scoped assistant session orchestration and persistence.

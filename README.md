@@ -41,6 +41,10 @@ node src/server.js --config ./config.json --port 4000
 - Pagination on results: `GET /query/:id/results?limit=25&offset=0` or `GET /query/:id/results?page=1&size=25`
 - `POST /query/:id/refresh`
 - `POST /query/:id/cancel`
+- `POST /query/:id/assistant/send` body: `{ "prompt": "..." }` (starts assistant run; lazy-creates session on first send)
+- `GET /query/:id/assistant/status` (returns assistant run state for the query)
+- `POST /query/:id/assistant/cancel` (requests cancellation of active assistant run)
+- `GET /query/:id/assistant/messages` (returns persisted assistant conversation messages for the query)
 - `GET /health`
 
 ## Frontend
@@ -73,3 +77,13 @@ You can override queries for testing large result sets:
 ```bash
 PAGINATION_SQL='SELECT * FROM your_large_table' ./scripts/exercise.sh http://localhost:3000
 ```
+
+Assistant API exercise:
+```bash
+./scripts/exercise-assistant.sh http://localhost:3000
+```
+
+Environment overrides for assistant exercise:
+- `ASSISTANT_PROMPT` (default: `Give me a SQL query that gives me the current date time`)
+- `QUERY_SQL` (default: empty; script uses `SELECT 1` only for required query creation step)
+- `LOG_FILE` (default: `./results/exercise-assistant-<timestamp>.log`; includes request/response pairs)

@@ -17,6 +17,10 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - `POST /query/:identifier/refresh`: rerun existing query and clear prior results.
 - `POST /query/:identifier/cancel`: cancel running Athena query when possible.
 - `GET /query/:identifier/results` also supports pagination query params: `limit`/`offset` and `page`/`size`.
+- `POST /query/:identifier/assistant/send`: submit assistant prompt for a query and start an async assistant run.
+- `GET /query/:identifier/assistant/status`: return assistant run state metadata for a query.
+- `POST /query/:identifier/assistant/cancel`: request cancellation of active assistant run for a query.
+- `GET /query/:identifier/assistant/messages`: return persisted assistant conversation messages for a query.
 
 ## Behavior Requirements
 - Unknown query id should return an appropriate response.
@@ -27,6 +31,9 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Multiple queries must run in parallel.
 - Backend should poll Athena for running query states.
 - Concurrency protection required around query state updates.
+- Only one assistant run can be active per query at a time; concurrent sends for the same query are rejected.
+- Assistant runs are asynchronous and polled via status endpoint.
+- Assistant cancellation is best-effort and should transition running sessions to cancelling/idle states.
 
 ## Storage Requirements
 - Query metadata should be stored in a minimal DB (MySQL preferred).
@@ -74,7 +81,8 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Results stored under `./results/<query-id>.json`.
 - JSON logger includes timestamp/level/file/line/message.
 - Config loaded from `--config <path>`.
-- OpenAI tool schemas scaffolded under `src/openai` (`toolSchemas.js` / `index.js`) for future assistant integration.
+- OpenAI tool schemas are defined under `src/openai` (`toolSchemas.js` / `index.js`) and used by assistant runtime.
+- OpenAI assistant integration is active via `/query/:id/assistant/*` endpoints with tool-call execution loop.
 - Static frontend served from `/` with Monaco SQL editor, SQL format action, submit, polling, and results view.
 - Monaco editor uses schema-aware autocomplete (keywords/tables/columns) and debounced backend validation markers.
 - Frontend includes collapsible assistant panel (response display + prompt input) above query editor.
@@ -90,3 +98,4 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Tabulator renders HTTP/HTTPS cell values as clickable links.
 - If Tabulator is unavailable or fails to initialize, frontend falls back to a basic HTML table rendering.
 - `scripts/exercise.sh` validates base API behavior plus paginated results behavior, and supports SQL overrides via env vars (`QUERY1_SQL`, `QUERY2_SQL`, `PAGINATION_SQL`).
+- `scripts/exercise-assistant.sh` validates assistant send/status/messages/cancel behavior, logs request/response pairs to a file (`LOG_FILE`), and supports prompt/query overrides (`ASSISTANT_PROMPT`, `QUERY_SQL`; empty `QUERY_SQL` uses `SELECT 1` only for query creation).

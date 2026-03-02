@@ -628,6 +628,128 @@ function deleteQueryHandler({ services }) {
   };
 }
 
+function sendAssistantPromptHandler({ services }) {
+  return async function sendAssistantPrompt(req, res) {
+    try {
+      const id = req.params.id;
+      const prompt = req.body?.prompt;
+
+      if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
+        return res.status(400).json({
+          error: 'INVALID_REQUEST',
+          message: 'Request body must include non-empty string field: prompt'
+        });
+      }
+
+      const response = await services.sendAssistantPrompt(id, prompt.trim());
+      if (response.error === 'QUERY_NOT_FOUND') {
+        return notFoundResponse(res, id);
+      }
+
+      if (response.error === 'RUN_ACTIVE') {
+        return res.status(409).json({
+          error: 'ASSISTANT_RUN_ACTIVE',
+          message: 'Assistant run already in progress for this query',
+          queryId: id,
+          sessionId: response.session?.id || null,
+          runStatus: response.session?.runStatus || 'RUNNING'
+        });
+      }
+
+      if (response.error === 'RUN_START_FAILED') {
+        return res.status(500).json({
+          error: 'ASSISTANT_RUN_START_FAILED',
+          message: 'Failed to transition assistant run into running state'
+        });
+      }
+
+      return res.status(202).json({
+        queryId: id,
+        sessionId: response.sessionId,
+        runStatus: response.runStatus,
+        runStartedAt: response.runStartedAt
+      });
+    } catch (error) {
+      if (error.code === 'OPENAI_NOT_CONFIGURED') {
+        return res.status(503).json({
+          error: 'OPENAI_NOT_CONFIGURED',
+          message: 'OpenAI API key is not configured'
+        });
+      }
+
+      return res.status(500).json({
+        error: 'ASSISTANT_SEND_FAILED',
+        message: 'Failed to submit assistant prompt'
+      });
+    }
+  };
+}
+
+function getAssistantStatusHandler({ services }) {
+  return async function getAssistantStatus(req, res) {
+    try {
+      const id = req.params.id;
+      const response = await services.getAssistantStatus(id);
+      if (response.error === 'QUERY_NOT_FOUND') {
+        return notFoundResponse(res, id);
+      }
+
+      return res.status(200).json(response);
+    } catch (_error) {
+      return res.status(500).json({
+        error: 'ASSISTANT_STATUS_FAILED',
+        message: 'Failed to get assistant status'
+      });
+    }
+  };
+}
+
+function cancelAssistantRunHandler({ services }) {
+  return async function cancelAssistantRun(req, res) {
+    try {
+      const id = req.params.id;
+      const response = await services.cancelAssistantRun(id);
+      if (response.error === 'QUERY_NOT_FOUND') {
+        return notFoundResponse(res, id);
+      }
+
+      if (response.error === 'NO_ACTIVE_RUN') {
+        return res.status(409).json({
+          error: 'ASSISTANT_RUN_NOT_ACTIVE',
+          message: 'No active assistant run to cancel',
+          queryId: id
+        });
+      }
+
+      return res.status(202).json(response);
+    } catch (_error) {
+      return res.status(500).json({
+        error: 'ASSISTANT_CANCEL_FAILED',
+        message: 'Failed to cancel assistant run'
+      });
+    }
+  };
+}
+
+function getAssistantMessagesHandler({ services }) {
+  return async function getAssistantMessages(req, res) {
+    try {
+      const id = req.params.id;
+      const response = await services.listAssistantMessages(id);
+      if (response.error === 'QUERY_NOT_FOUND') {
+        return notFoundResponse(res, id);
+      }
+
+      return res.status(200).json(response);
+    } catch (_error) {
+      return res.status(500).json({
+        error: 'ASSISTANT_MESSAGES_FAILED',
+        message: 'Failed to get assistant messages'
+      });
+    }
+  };
+}
+
 module.exports = {
   createQueryHandler,
   updateQueryHandler,
@@ -640,5 +762,9 @@ module.exports = {
   getQueryResultsHandler,
   refreshQueryHandler,
   cancelQueryHandler,
-  deleteQueryHandler
+  deleteQueryHandler,
+  sendAssistantPromptHandler,
+  getAssistantStatusHandler,
+  cancelAssistantRunHandler,
+  getAssistantMessagesHandler
 };

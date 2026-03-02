@@ -96,9 +96,13 @@ async function initSchema(pool, options = {}) {
       openai_conversation_id VARCHAR(255) NULL,
       model VARCHAR(64) NULL,
       status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
+      run_status VARCHAR(32) NOT NULL DEFAULT 'IDLE',
       created_at DATETIME NOT NULL,
       updated_at DATETIME NOT NULL,
       last_used_at DATETIME NULL,
+      run_started_at DATETIME NULL,
+      run_finished_at DATETIME NULL,
+      cancel_requested_at DATETIME NULL,
       token_usage_prompt BIGINT NOT NULL DEFAULT 0,
       token_usage_completion BIGINT NOT NULL DEFAULT 0,
       token_usage_total BIGINT NOT NULL DEFAULT 0,
@@ -108,9 +112,41 @@ async function initSchema(pool, options = {}) {
         ON DELETE CASCADE,
       INDEX idx_assistant_sessions_query_id (query_id),
       INDEX idx_assistant_sessions_status (status),
+      INDEX idx_assistant_sessions_run_status (run_status),
       INDEX idx_assistant_sessions_openai_conv (openai_conversation_id),
       INDEX idx_assistant_sessions_last_used_at (last_used_at)
     )
+  `);
+
+  const sessionColumnsToEnsure = [
+    { name: 'run_status', ddl: "ALTER TABLE assistant_sessions ADD COLUMN run_status VARCHAR(32) NOT NULL DEFAULT 'IDLE'" },
+    { name: 'run_started_at', ddl: 'ALTER TABLE assistant_sessions ADD COLUMN run_started_at DATETIME NULL' },
+    { name: 'run_finished_at', ddl: 'ALTER TABLE assistant_sessions ADD COLUMN run_finished_at DATETIME NULL' },
+    { name: 'cancel_requested_at', ddl: 'ALTER TABLE assistant_sessions ADD COLUMN cancel_requested_at DATETIME NULL' }
+  ];
+
+  for (const column of sessionColumnsToEnsure) {
+    const [rows] = await pool.execute(
+      `
+        SELECT COUNT(*) AS column_count
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+          AND table_name = 'assistant_sessions'
+          AND column_name = ?
+      `,
+      [column.name]
+    );
+
+    const hasColumn = Number(rows[0]?.column_count || 0) > 0;
+    if (!hasColumn) {
+      await pool.execute(column.ddl);
+    }
+  }
+
+  await pool.execute(`
+    UPDATE assistant_sessions
+    SET run_status = 'IDLE'
+    WHERE run_status IS NULL OR run_status = ''
   `);
 
   await pool.execute(`

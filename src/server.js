@@ -7,7 +7,9 @@ const { loadConfig } = require('./utils/config');
 const logger = require('./utils/logger');
 const { createPool, initSchema } = require('./db/mysql');
 const { QueryStore } = require('./services/queryStore');
+const { AssistantStore } = require('./services/assistantStore');
 const { AthenaService } = require('./services/athenaService');
+const { AssistantService } = require('./services/assistantService');
 const { LockManager } = require('./services/lockManager');
 const { buildRouter } = require('./routes/router');
 
@@ -98,7 +100,7 @@ async function logAwsSecurityContext(athenaService) {
   }
 }
 
-function createServices({ queryStore, athenaService, lockManager }) {
+function createServices({ queryStore, assistantService, athenaService, lockManager }) {
   async function createQuery(queryText, databaseName) {
     const id = uuidv4();
     const submitted = await athenaService.submitQuery(queryText, databaseName);
@@ -309,8 +311,25 @@ function createServices({ queryStore, athenaService, lockManager }) {
     return athenaService.validateQuery(queryText, { databaseName });
   }
 
+  async function sendAssistantPrompt(queryId, prompt) {
+    return assistantService.send(queryId, prompt);
+  }
+
+  async function getAssistantStatus(queryId) {
+    return assistantService.getStatus(queryId);
+  }
+
+  async function cancelAssistantRun(queryId) {
+    return assistantService.cancel(queryId);
+  }
+
+  async function listAssistantMessages(queryId) {
+    return assistantService.listMessages(queryId);
+  }
+
   return {
     queryStore,
+    assistantService,
     createQuery,
     refreshQuery,
     cancelQuery,
@@ -319,6 +338,10 @@ function createServices({ queryStore, athenaService, lockManager }) {
     listTables,
     getTableSchema,
     validateQuery,
+    sendAssistantPrompt,
+    getAssistantStatus,
+    cancelAssistantRun,
+    listAssistantMessages,
     pollRunningQueries
   };
 }
@@ -335,7 +358,16 @@ async function startServer() {
   const queryStore = new QueryStore(pool);
   const athenaService = new AthenaService(config);
   const lockManager = new LockManager();
-  const services = createServices({ queryStore, athenaService, lockManager });
+  const assistantStore = new AssistantStore(pool);
+  const assistantService = new AssistantService({
+    assistantStore,
+    queryStore,
+    athenaService,
+    lockManager,
+    config,
+    logger
+  });
+  const services = createServices({ queryStore, assistantService, athenaService, lockManager });
   await logAwsSecurityContext(athenaService);
 
   const app = express();
