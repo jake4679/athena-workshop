@@ -12,8 +12,9 @@ Minimal Node.js HTTP service for submitting and managing AWS Athena queries.
 4. Copy `config.example.json` to `config.json` and set real values.
    - If you use named AWS CLI profiles or IAM Identity Center (SSO), set `aws.profile` in config to force the Node process to use the same profile.
    - When `aws.profile` is set, server startup clears `AWS_ACCESS_KEY_ID`/`AWS_SESSION_TOKEN` env credentials so stale env tokens cannot override profile-based auth.
-   - OpenAI settings are configured under `openai` (supports env-var key and optional config-file key fallback).
-   - `openai.assistantSeedInstruction` controls the default instruction injected when a query's assistant session is first created.
+   - Assistant settings are configured under `assistant` with provider selection (`assistant.provider`) and generic key resolution (`assistant.apiKeyEnvVar` / `assistant.apiKey`).
+   - Provider-specific options are configured under `providers.<provider>` (for example `providers.openai.model` or `providers.anthropic.model`).
+   - `assistant.assistantSeedInstruction` controls the default instruction injected when a query's assistant session is first created.
 5. Install dependencies:
    ```bash
    npm install
@@ -46,7 +47,7 @@ node src/server.js --config ./config.json --port 4000
 - `GET /query/:id/assistant/status` (returns assistant run state for the query)
 - `POST /query/:id/assistant/cancel` (requests cancellation of active assistant run)
 - `GET /query/:id/assistant/messages` (returns persisted assistant conversation messages for the query)
-- Assistant OpenAI requests do not use a local backend timeout; runs complete when model response returns or when cancelled/failed.
+- Assistant provider requests (OpenAI/Anthropic) do not use a local backend timeout; runs complete when model response returns or when cancelled/failed.
 - `GET /health`
 
 ## Frontend
@@ -117,3 +118,6 @@ Environment overrides for assistant exercise:
   ```bash
   npm run test:cancel-query:report
   ```
+
+## TODO
+- Remove legacy `assistant_sessions.openai_conversation_id` and `assistant_messages.openai_response_id` columns after all known database instances have been migrated and verified to use `provider_conversation_id` / `provider_response_id` only.

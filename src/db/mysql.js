@@ -93,6 +93,7 @@ async function initSchema(pool, options = {}) {
       query_id VARCHAR(36) NOT NULL,
       mode VARCHAR(32) NOT NULL,
       provider VARCHAR(32) NOT NULL DEFAULT 'openai',
+      provider_conversation_id VARCHAR(255) NULL,
       openai_conversation_id VARCHAR(255) NULL,
       model VARCHAR(64) NULL,
       status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
@@ -113,12 +114,17 @@ async function initSchema(pool, options = {}) {
       INDEX idx_assistant_sessions_query_id (query_id),
       INDEX idx_assistant_sessions_status (status),
       INDEX idx_assistant_sessions_run_status (run_status),
+      INDEX idx_assistant_sessions_provider_conv (provider_conversation_id),
       INDEX idx_assistant_sessions_openai_conv (openai_conversation_id),
       INDEX idx_assistant_sessions_last_used_at (last_used_at)
     )
   `);
 
   const sessionColumnsToEnsure = [
+    {
+      name: 'provider_conversation_id',
+      ddl: 'ALTER TABLE assistant_sessions ADD COLUMN provider_conversation_id VARCHAR(255) NULL'
+    },
     { name: 'run_status', ddl: "ALTER TABLE assistant_sessions ADD COLUMN run_status VARCHAR(32) NOT NULL DEFAULT 'IDLE'" },
     { name: 'run_started_at', ddl: 'ALTER TABLE assistant_sessions ADD COLUMN run_started_at DATETIME NULL' },
     { name: 'run_finished_at', ddl: 'ALTER TABLE assistant_sessions ADD COLUMN run_finished_at DATETIME NULL' },
@@ -150,12 +156,21 @@ async function initSchema(pool, options = {}) {
   `);
 
   await pool.execute(`
+    UPDATE assistant_sessions
+    SET provider_conversation_id = openai_conversation_id
+    WHERE (provider_conversation_id IS NULL OR provider_conversation_id = '')
+      AND openai_conversation_id IS NOT NULL
+      AND openai_conversation_id <> ''
+  `);
+
+  await pool.execute(`
     CREATE TABLE IF NOT EXISTS assistant_messages (
       id VARCHAR(36) PRIMARY KEY,
       session_id VARCHAR(36) NOT NULL,
       role VARCHAR(16) NOT NULL,
       content LONGTEXT NOT NULL,
       content_type VARCHAR(32) NOT NULL DEFAULT 'text',
+      provider_response_id VARCHAR(255) NULL,
       openai_response_id VARCHAR(255) NULL,
       tool_name VARCHAR(128) NULL,
       tool_call_id VARCHAR(128) NULL,
@@ -172,6 +187,39 @@ async function initSchema(pool, options = {}) {
       INDEX idx_assistant_messages_role (role),
       INDEX idx_assistant_messages_tool_call (tool_call_id)
     )
+  `);
+
+  const messageColumnsToEnsure = [
+    {
+      name: 'provider_response_id',
+      ddl: 'ALTER TABLE assistant_messages ADD COLUMN provider_response_id VARCHAR(255) NULL'
+    }
+  ];
+
+  for (const column of messageColumnsToEnsure) {
+    const [rows] = await pool.execute(
+      `
+        SELECT COUNT(*) AS column_count
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+          AND table_name = 'assistant_messages'
+          AND column_name = ?
+      `,
+      [column.name]
+    );
+
+    const hasColumn = Number(rows[0]?.column_count || 0) > 0;
+    if (!hasColumn) {
+      await pool.execute(column.ddl);
+    }
+  }
+
+  await pool.execute(`
+    UPDATE assistant_messages
+    SET provider_response_id = openai_response_id
+    WHERE (provider_response_id IS NULL OR provider_response_id = '')
+      AND openai_response_id IS NOT NULL
+      AND openai_response_id <> ''
   `);
 }
 

@@ -35,7 +35,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Only one assistant run can be active per query at a time; concurrent sends for the same query are rejected.
 - Assistant runs are asynchronous and polled via status endpoint.
 - Assistant cancellation is best-effort and should transition running sessions to cancelling/idle states.
-- Assistant OpenAI calls do not use a local backend timeout; runs complete when response returns or are cancelled/failed.
+- Assistant provider calls (OpenAI/Anthropic) do not use a local backend timeout; runs complete when response returns or are cancelled/failed.
 
 ## Storage Requirements
 - Query metadata should be stored in a minimal DB (MySQL preferred).
@@ -45,13 +45,19 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Assistant conversation storage uses MySQL tables:
   - `assistant_sessions`
   - `assistant_messages`
+  - `assistant_sessions.provider_conversation_id` stores provider conversation linkage when supported.
+  - `assistant_messages.provider_response_id` stores provider response identifiers when available.
 
 ## Config Requirements
 - Region/profile/S3 output/bucket settings and server settings in JSON config file.
-- OpenAI settings should be present in config (`openai` block), supporting:
+- Assistant settings should be present in config (`assistant` block), supporting:
+  - provider selection (`assistant.provider`)
   - env-var key resolution
   - optional config-file key fallback
   - configurable `assistantSeedInstruction` for first-message session seeding
+- Provider-specific settings should be present in config (`providers` block), including:
+  - `providers.openai` (`model`, `baseURL`)
+  - `providers.anthropic` (`model`, `baseURL`, `version`, `maxTokens`)
 - Config file path should be passed via CLI when launching server.
 
 ## Documentation Requirements
@@ -84,9 +90,9 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Results stored under configured `server.resultsDir` (default: `./results`) as `<query-id>.json`.
 - JSON logger includes timestamp/level/file/line/message.
 - Config loaded from `--config <path>`.
-- OpenAI tool schemas are defined under `src/openai` (`toolSchemas.js` / `index.js`) and used by assistant runtime.
-- OpenAI assistant integration is active via `/query/:id/assistant/*` endpoints with tool-call execution loop.
-- Assistant session seed instruction is configurable via `openai.assistantSeedInstruction`.
+- Provider-agnostic assistant tool schemas are defined under `src/assistant/tools.js` and translated per provider.
+- Assistant integration supports `openai` and `anthropic` providers via `/query/:id/assistant/*` endpoints with a shared tool-call execution loop.
+- Assistant session seed instruction is configurable via `assistant.assistantSeedInstruction`.
 - Static frontend served from `/` with Monaco SQL editor, SQL format action, submit, polling, and results view.
 - Monaco editor uses schema-aware autocomplete (keywords/tables/columns) and debounced backend validation markers.
 - Frontend includes collapsible assistant panel (response display + prompt input) above query editor.

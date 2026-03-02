@@ -19,6 +19,7 @@ function fromSessionRow(row) {
     queryId: row.query_id,
     mode: row.mode,
     provider: row.provider,
+    providerConversationId: row.provider_conversation_id || row.openai_conversation_id || null,
     openaiConversationId: row.openai_conversation_id || null,
     model: row.model || null,
     status: row.status,
@@ -47,6 +48,7 @@ function fromMessageRow(row) {
     role: row.role,
     content: row.content,
     contentType: row.content_type,
+    providerResponseId: row.provider_response_id || row.openai_response_id || null,
     openaiResponseId: row.openai_response_id || null,
     toolName: row.tool_name || null,
     toolCallId: row.tool_call_id || null,
@@ -77,19 +79,40 @@ class AssistantStore {
     return fromSessionRow(rows[0]);
   }
 
+  async getSessionByQueryIdAndProvider(queryId, provider) {
+    const [rows] = await this.pool.execute(
+      'SELECT * FROM assistant_sessions WHERE query_id = ? AND provider = ? ORDER BY created_at DESC LIMIT 1',
+      [queryId, provider]
+    );
+    return fromSessionRow(rows[0]);
+  }
+
+  async getActiveSessionByQueryId(queryId) {
+    const [rows] = await this.pool.execute(
+      `SELECT * FROM assistant_sessions
+      WHERE query_id = ?
+        AND run_status IN ('RUNNING', 'CANCELLING')
+      ORDER BY created_at DESC
+      LIMIT 1`,
+      [queryId]
+    );
+    return fromSessionRow(rows[0]);
+  }
+
   async createSession(record) {
     const now = new Date();
     await this.pool.execute(
       `INSERT INTO assistant_sessions (
-        id, query_id, mode, provider, openai_conversation_id, model, status, run_status,
+        id, query_id, mode, provider, provider_conversation_id, openai_conversation_id, model, status, run_status,
         created_at, updated_at, last_used_at, run_started_at, run_finished_at, cancel_requested_at,
         token_usage_prompt, token_usage_completion, token_usage_total, last_error_message
-      ) VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', 'IDLE', ?, ?, ?, NULL, NULL, NULL, 0, 0, 0, NULL)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 'IDLE', ?, ?, ?, NULL, NULL, NULL, 0, 0, 0, NULL)`,
       [
         record.id,
         record.queryId,
         record.mode || 'query_assistant',
         record.provider || 'openai',
+        record.providerConversationId || record.openaiConversationId || null,
         record.openaiConversationId || null,
         record.model || null,
         now,
@@ -174,15 +197,16 @@ class AssistantStore {
     );
   }
 
-  async updateOpenAiConversationId(sessionId, responseId) {
+  async updateProviderConversationId(sessionId, responseId) {
     const now = new Date();
     await this.pool.execute(
       `UPDATE assistant_sessions
-      SET openai_conversation_id = ?,
+      SET provider_conversation_id = ?,
+          openai_conversation_id = CASE WHEN provider = 'openai' THEN ? ELSE openai_conversation_id END,
           updated_at = ?,
           last_used_at = ?
       WHERE id = ?`,
-      [responseId || null, now, now, sessionId]
+      [responseId || null, responseId || null, now, now, sessionId]
     );
   }
 
@@ -211,15 +235,16 @@ class AssistantStore {
     const now = new Date();
     await this.pool.execute(
       `INSERT INTO assistant_messages (
-        id, session_id, role, content, content_type, openai_response_id, tool_name, tool_call_id,
+        id, session_id, role, content, content_type, provider_response_id, openai_response_id, tool_name, tool_call_id,
         tool_args_json, tool_result_json, token_usage_prompt, token_usage_completion, token_usage_total, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         record.id,
         record.sessionId,
         record.role,
         record.content,
         record.contentType || 'text',
+        record.providerResponseId || record.openaiResponseId || null,
         record.openaiResponseId || null,
         record.toolName || null,
         record.toolCallId || null,

@@ -11,12 +11,23 @@
     "outputLocation": "s3://your-athena-query-results-bucket/prefix/",
     "workGroup": "primary"
   },
-  "openai": {
-    "apiKeyEnvVar": "OPENAI_API_KEY",
+  "assistant": {
+    "provider": "openai",
+    "apiKeyEnvVar": "ASSISTANT_API_KEY",
     "apiKey": "",
-    "model": "gpt-5",
-    "baseURL": "https://api.openai.com/v1",
     "assistantSeedInstruction": "You are a SQL assistant for AWS Athena. Provide concise, practical guidance and valid Athena SQL."
+  },
+  "providers": {
+    "openai": {
+      "model": "gpt-5",
+      "baseURL": "https://api.openai.com/v1"
+    },
+    "anthropic": {
+      "model": "claude-sonnet-4-5",
+      "baseURL": "https://api.anthropic.com",
+      "version": "2023-06-01",
+      "maxTokens": 2048
+    }
   },
   "mysql": {
     "host": "127.0.0.1",

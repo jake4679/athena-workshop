@@ -1,24 +1,68 @@
 const { v4: uuidv4 } = require('uuid');
-const { assistantTools, TOOL_NAMES } = require('../openai');
+const { TOOL_NAMES, assistantToolDefinitions } = require('../assistant/tools');
+const { OpenAIProvider } = require('../assistant/providers/openaiProvider');
+const { AnthropicProvider } = require('../assistant/providers/anthropicProvider');
 
 const MAX_SCHEMA_TABLES = 50;
 const MAX_COLUMNS_PER_TABLE = 50;
 const MAX_TOOL_ROUNDS = 6;
+const DEFAULT_SEED_INSTRUCTION =
+  'You are a SQL assistant for AWS Athena. Provide concise, practical guidance and valid Athena SQL.';
 
-function resolveOpenAiApiKey(config) {
-  const openaiConfig = config.openai || {};
-  const envVarName = openaiConfig.apiKeyEnvVar;
+function resolveApiKey({ provider, assistantConfig, legacyOpenAiConfig }) {
+  const envVarName =
+    assistantConfig.apiKeyEnvVar ||
+    legacyOpenAiConfig.apiKeyEnvVar ||
+    (provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY');
+
   const envValue =
     typeof envVarName === 'string' && envVarName.trim() !== '' ? process.env[envVarName.trim()] : null;
   if (typeof envValue === 'string' && envValue.trim() !== '') {
     return envValue.trim();
   }
 
-  if (typeof openaiConfig.apiKey === 'string' && openaiConfig.apiKey.trim() !== '') {
-    return openaiConfig.apiKey.trim();
+  const configKey = assistantConfig.apiKey || legacyOpenAiConfig.apiKey;
+  if (typeof configKey === 'string' && configKey.trim() !== '') {
+    return configKey.trim();
   }
 
   return null;
+}
+
+function resolveAssistantRuntimeConfig(config = {}) {
+  const assistantConfig = config.assistant || {};
+  const providersConfig = config.providers || {};
+  const legacyOpenAiConfig = config.openai || {};
+
+  const providerRaw = assistantConfig.provider || 'openai';
+  const provider = String(providerRaw).trim().toLowerCase();
+
+  const assistantSeedInstruction =
+    assistantConfig.assistantSeedInstruction ||
+    legacyOpenAiConfig.assistantSeedInstruction ||
+    DEFAULT_SEED_INSTRUCTION;
+
+  const apiKey = resolveApiKey({ provider, assistantConfig, legacyOpenAiConfig });
+
+  const openaiProviderConfig = {
+    model: providersConfig.openai?.model || legacyOpenAiConfig.model || 'gpt-5',
+    baseURL: providersConfig.openai?.baseURL || legacyOpenAiConfig.baseURL || 'https://api.openai.com/v1'
+  };
+
+  const anthropicProviderConfig = {
+    model: providersConfig.anthropic?.model || 'claude-sonnet-4-5',
+    baseURL: providersConfig.anthropic?.baseURL || 'https://api.anthropic.com',
+    version: providersConfig.anthropic?.version || '2023-06-01',
+    maxTokens: providersConfig.anthropic?.maxTokens || 2048
+  };
+
+  return {
+    provider,
+    apiKey,
+    assistantSeedInstruction,
+    openaiProviderConfig,
+    anthropicProviderConfig
+  };
 }
 
 function summarizeSchema(schemaResult) {
@@ -38,53 +82,54 @@ function summarizeSchema(schemaResult) {
   };
 }
 
-function parseJsonArgs(raw) {
-  if (typeof raw !== 'string' || raw.trim() === '') {
-    return {};
-  }
+function mapStoredMessagesToOpenAiInput(messages, userPrompt) {
+  const seed = messages.find((message) => message.role === 'system');
+  const input = [];
 
-  try {
-    return JSON.parse(raw);
-  } catch (_error) {
-    return null;
-  }
-}
-
-function extractAssistantText(responseJson) {
-  if (!responseJson) {
-    return '';
-  }
-
-  if (typeof responseJson.output_text === 'string' && responseJson.output_text.trim() !== '') {
-    return responseJson.output_text.trim();
-  }
-
-  const output = Array.isArray(responseJson.output) ? responseJson.output : [];
-  const chunks = [];
-  output.forEach((item) => {
-    if (item?.type !== 'message') {
-      return;
-    }
-    const content = Array.isArray(item.content) ? item.content : [];
-    content.forEach((part) => {
-      if (part?.type === 'output_text' && typeof part.text === 'string') {
-        chunks.push(part.text);
-      }
+  if (seed && typeof seed.content === 'string' && seed.content.trim() !== '') {
+    input.push({
+      role: 'system',
+      content: [{ type: 'input_text', text: seed.content }]
     });
+  }
+
+  input.push({
+    role: 'user',
+    content: [{ type: 'input_text', text: String(userPrompt || '').trim() }]
   });
 
-  return chunks.join('\n').trim();
+  return input;
 }
 
-function extractFunctionCalls(responseJson) {
-  const output = Array.isArray(responseJson?.output) ? responseJson.output : [];
-  return output
-    .filter((item) => item?.type === 'function_call')
-    .map((item) => ({
-      id: item.call_id || item.id || uuidv4(),
-      name: item.name,
-      arguments: typeof item.arguments === 'string' ? item.arguments : '{}'
+function mapStoredMessagesToAnthropicContext(messages, userPrompt) {
+  const seed = messages.find((message) => message.role === 'system');
+  const system = seed && typeof seed.content === 'string' ? seed.content.trim() : '';
+  const promptText = String(userPrompt || '').trim();
+
+  const mappedMessages = messages
+    .filter((message) => message.role === 'user' || message.role === 'assistant')
+    .map((message) => ({
+      role: message.role,
+      content: [{ type: 'text', text: String(message.content || '') }]
     }));
+
+  const last = mappedMessages[mappedMessages.length - 1];
+  if (last && last.role === 'user') {
+    const lastText = String(last.content?.[0]?.text || '').trim();
+    if (lastText === promptText) {
+      mappedMessages.pop();
+    }
+  }
+
+  mappedMessages.push({
+    role: 'user',
+    content: [{ type: 'text', text: promptText }]
+  });
+
+  return {
+    system,
+    messages: mappedMessages
+  };
 }
 
 class AssistantService {
@@ -94,20 +139,37 @@ class AssistantService {
     this.athenaService = athenaService;
     this.lockManager = lockManager;
     this.logger = logger;
-    this.model = config.openai?.model || 'gpt-5';
-    this.baseURL = (config.openai?.baseURL || 'https://api.openai.com/v1').replace(/\/$/, '');
-    this.assistantSeedInstruction =
-      config.openai?.assistantSeedInstruction ||
-      'You are a SQL assistant for AWS Athena. Provide concise, practical guidance and valid Athena SQL.';
-    this.apiKey = resolveOpenAiApiKey(config);
+
+    const runtimeConfig = resolveAssistantRuntimeConfig(config);
+    this.providerName = runtimeConfig.provider;
+    this.assistantSeedInstruction = runtimeConfig.assistantSeedInstruction;
+    this.toolDefinitions = assistantToolDefinitions;
+
+    if (this.providerName === 'openai') {
+      this.provider = new OpenAIProvider({
+        apiKey: runtimeConfig.apiKey,
+        model: runtimeConfig.openaiProviderConfig.model,
+        baseURL: runtimeConfig.openaiProviderConfig.baseURL
+      });
+      this.model = runtimeConfig.openaiProviderConfig.model;
+    } else if (this.providerName === 'anthropic') {
+      this.provider = new AnthropicProvider({
+        apiKey: runtimeConfig.apiKey,
+        model: runtimeConfig.anthropicProviderConfig.model,
+        baseURL: runtimeConfig.anthropicProviderConfig.baseURL,
+        version: runtimeConfig.anthropicProviderConfig.version,
+        maxTokens: runtimeConfig.anthropicProviderConfig.maxTokens
+      });
+      this.model = runtimeConfig.anthropicProviderConfig.model;
+    } else {
+      const error = new Error(`Unsupported assistant provider: ${this.providerName}`);
+      error.code = 'ASSISTANT_PROVIDER_UNSUPPORTED';
+      throw error;
+    }
   }
 
   ensureConfigured() {
-    if (!this.apiKey) {
-      const error = new Error('OpenAI API key is not configured');
-      error.code = 'OPENAI_NOT_CONFIGURED';
-      throw error;
-    }
+    this.provider.ensureConfigured();
   }
 
   async createSessionSeedMessage(query) {
@@ -138,7 +200,7 @@ class AssistantService {
   }
 
   async getOrCreateSession(query) {
-    let session = await this.assistantStore.getSessionByQueryId(query.id);
+    let session = await this.assistantStore.getSessionByQueryIdAndProvider(query.id, this.providerName);
     if (session) {
       return { session, created: false };
     }
@@ -147,7 +209,7 @@ class AssistantService {
       id: uuidv4(),
       queryId: query.id,
       mode: 'query_assistant',
-      provider: 'openai',
+      provider: this.providerName,
       model: this.model
     });
 
@@ -218,76 +280,48 @@ class AssistantService {
     throw new Error(`unsupported tool: ${toolName}`);
   }
 
-  async callOpenAi({ input, previousResponseId }) {
-    const response = await fetch(`${this.baseURL}/responses`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: this.model,
-        input,
-        tools: assistantTools,
-        ...(previousResponseId ? { previous_response_id: previousResponseId } : {})
-      })
-    });
-
-    const json = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const errMessage = json?.error?.message || `OpenAI request failed with HTTP ${response.status}`;
-      const error = new Error(errMessage);
-      error.code = 'OPENAI_REQUEST_FAILED';
-      throw error;
-    }
-
-    return json;
-  }
-
   async shouldCancel(sessionId) {
     const latest = await this.assistantStore.getSessionById(sessionId);
     return latest && latest.runStatus === 'CANCELLING';
   }
 
-  async buildRunStartContext(sessionId, userPrompt) {
-    const session = await this.assistantStore.getSessionById(sessionId);
-    const trimmedPrompt = String(userPrompt || '').trim();
-    if (session?.openaiConversationId) {
-      return {
-        previousResponseId: session.openaiConversationId,
-        input: [
-          {
-            role: 'user',
-            content: [{ type: 'input_text', text: trimmedPrompt }]
-          }
-        ]
-      };
+  async persistModelOutput(sessionId, providerResponse) {
+    if (providerResponse.providerConversationId) {
+      await this.assistantStore.updateProviderConversationId(sessionId, providerResponse.providerConversationId);
     }
 
-    const messages = await this.assistantStore.listMessagesBySessionId(sessionId);
-    const seed = messages.find((message) => message.role === 'system');
-    const input = [];
-    if (seed && typeof seed.content === 'string' && seed.content.trim() !== '') {
-      input.push({
-        role: 'system',
-        content: [{ type: 'input_text', text: seed.content }]
+    await this.assistantStore.addTokenUsage(sessionId, providerResponse.usage);
+
+    if (providerResponse.assistantText) {
+      const openaiResponseId = this.providerName === 'openai' ? providerResponse.providerResponseId || null : null;
+      await this.assistantStore.createMessage({
+        id: uuidv4(),
+        sessionId,
+        role: 'assistant',
+        content: providerResponse.assistantText,
+        contentType: 'text',
+        providerResponseId: providerResponse.providerResponseId || null,
+        openaiResponseId,
+        tokenUsagePrompt: providerResponse.usage.prompt ?? null,
+        tokenUsageCompletion: providerResponse.usage.completion ?? null,
+        tokenUsageTotal: providerResponse.usage.total ?? null
       });
     }
-    input.push({
-      role: 'user',
-      content: [{ type: 'input_text', text: trimmedPrompt }]
-    });
-
-    return {
-      previousResponseId: null,
-      input
-    };
   }
 
-  async runAssistantLoop(sessionId, userPrompt) {
-    const startContext = await this.buildRunStartContext(sessionId, userPrompt);
-    let input = startContext.input;
-    let previousResponseId = startContext.previousResponseId;
+  async runOpenAiLoop(sessionId, userPrompt) {
+    const session = await this.assistantStore.getSessionById(sessionId);
+    const messages = await this.assistantStore.listMessagesBySessionId(sessionId);
+
+    let previousResponseId = session?.providerConversationId || session?.openaiConversationId || null;
+    let input = previousResponseId
+      ? [
+          {
+            role: 'user',
+            content: [{ type: 'input_text', text: String(userPrompt || '').trim() }]
+          }
+        ]
+      : mapStoredMessagesToOpenAiInput(messages, userPrompt);
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
       if (await this.shouldCancel(sessionId)) {
@@ -295,43 +329,24 @@ class AssistantService {
         return { cancelled: true };
       }
 
-      const responseJson = await this.callOpenAi({ input, previousResponseId });
-      previousResponseId = responseJson.id || previousResponseId;
-      if (responseJson.id) {
-        await this.assistantStore.updateOpenAiConversationId(sessionId, responseJson.id);
-      }
-      const usage = responseJson.usage || {};
-      await this.assistantStore.addTokenUsage(sessionId, {
-        prompt: usage.input_tokens || 0,
-        completion: usage.output_tokens || 0,
-        total: usage.total_tokens || 0
+      const providerResponse = await this.provider.send({
+        input,
+        previousResponseId,
+        tools: this.toolDefinitions
       });
 
-      const assistantText = extractAssistantText(responseJson);
-      if (assistantText) {
-        await this.assistantStore.createMessage({
-          id: uuidv4(),
-          sessionId,
-          role: 'assistant',
-          content: assistantText,
-          contentType: 'text',
-          openaiResponseId: responseJson.id || null,
-          tokenUsagePrompt: usage.input_tokens ?? null,
-          tokenUsageCompletion: usage.output_tokens ?? null,
-          tokenUsageTotal: usage.total_tokens ?? null
-        });
-      }
+      previousResponseId = providerResponse.providerConversationId || previousResponseId;
+      await this.persistModelOutput(sessionId, providerResponse);
 
-      const functionCalls = extractFunctionCalls(responseJson);
-      if (functionCalls.length === 0) {
+      if (!Array.isArray(providerResponse.toolCalls) || providerResponse.toolCalls.length === 0) {
         await this.assistantStore.markRunSucceeded(sessionId);
         return { cancelled: false };
       }
 
       const toolOutputs = [];
-      for (const call of functionCalls) {
-        const parsedArgs = parseJsonArgs(call.arguments);
+      for (const call of providerResponse.toolCalls) {
         let toolResult;
+        const parsedArgs = call.argumentsJson;
 
         if (parsedArgs === null) {
           toolResult = {
@@ -356,17 +371,19 @@ class AssistantService {
           content: JSON.stringify(
             {
               name: call.name,
-              args: parsedArgs === null ? call.arguments : parsedArgs,
+              args: parsedArgs === null ? call.argumentsRaw : parsedArgs,
               result: toolResult
             },
             null,
             2
           ),
           contentType: 'json',
-          openaiResponseId: responseJson.id || null,
+          providerResponseId: providerResponse.providerResponseId || null,
+          openaiResponseId:
+            this.providerName === 'openai' ? providerResponse.providerResponseId || null : null,
           toolName: call.name || null,
           toolCallId: call.id || null,
-          toolArgsJson: parsedArgs === null ? call.arguments : JSON.stringify(parsedArgs),
+          toolArgsJson: parsedArgs === null ? call.argumentsRaw : JSON.stringify(parsedArgs),
           toolResultJson: JSON.stringify(toolResult)
         });
 
@@ -387,6 +404,106 @@ class AssistantService {
     throw new Error(`Assistant tool loop exceeded maximum rounds (${MAX_TOOL_ROUNDS})`);
   }
 
+  async runAnthropicLoop(sessionId, userPrompt) {
+    const messages = await this.assistantStore.listMessagesBySessionId(sessionId);
+    const context = mapStoredMessagesToAnthropicContext(messages, userPrompt);
+
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+      if (await this.shouldCancel(sessionId)) {
+        await this.assistantStore.markRunCancelled(sessionId);
+        return { cancelled: true };
+      }
+
+      const providerResponse = await this.provider.send({
+        system: context.system,
+        messages: context.messages,
+        tools: this.toolDefinitions
+      });
+
+      await this.persistModelOutput(sessionId, providerResponse);
+
+      if (!Array.isArray(providerResponse.toolCalls) || providerResponse.toolCalls.length === 0) {
+        await this.assistantStore.markRunSucceeded(sessionId);
+        return { cancelled: false };
+      }
+
+      const assistantContentBlocks = Array.isArray(providerResponse.assistantContentBlocks)
+        ? providerResponse.assistantContentBlocks
+        : [];
+
+      if (assistantContentBlocks.length > 0) {
+        context.messages.push({ role: 'assistant', content: assistantContentBlocks });
+      }
+
+      const toolResultBlocks = [];
+      for (const call of providerResponse.toolCalls) {
+        let toolResult;
+        const parsedArgs = call.argumentsJson;
+
+        if (parsedArgs === null) {
+          toolResult = {
+            error: 'INVALID_TOOL_ARGUMENTS',
+            message: 'Tool arguments must be valid JSON'
+          };
+        } else {
+          try {
+            toolResult = await this.executeTool(call.name, parsedArgs);
+          } catch (error) {
+            toolResult = {
+              error: 'TOOL_EXECUTION_FAILED',
+              message: error.message
+            };
+          }
+        }
+
+        await this.assistantStore.createMessage({
+          id: uuidv4(),
+          sessionId,
+          role: 'tool',
+          content: JSON.stringify(
+            {
+              name: call.name,
+              args: parsedArgs === null ? call.argumentsRaw : parsedArgs,
+              result: toolResult
+            },
+            null,
+            2
+          ),
+          contentType: 'json',
+          providerResponseId: providerResponse.providerResponseId || null,
+          openaiResponseId:
+            this.providerName === 'openai' ? providerResponse.providerResponseId || null : null,
+          toolName: call.name || null,
+          toolCallId: call.id || null,
+          toolArgsJson: parsedArgs === null ? call.argumentsRaw : JSON.stringify(parsedArgs),
+          toolResultJson: JSON.stringify(toolResult)
+        });
+
+        toolResultBlocks.push({
+          type: 'tool_result',
+          tool_use_id: call.id,
+          content: JSON.stringify(toolResult)
+        });
+      }
+
+      context.messages.push({ role: 'user', content: toolResultBlocks });
+
+      if (await this.shouldCancel(sessionId)) {
+        await this.assistantStore.markRunCancelled(sessionId);
+        return { cancelled: true };
+      }
+    }
+
+    throw new Error(`Assistant tool loop exceeded maximum rounds (${MAX_TOOL_ROUNDS})`);
+  }
+
+  async runAssistantLoop(sessionId, userPrompt) {
+    if (this.providerName === 'openai') {
+      return this.runOpenAiLoop(sessionId, userPrompt);
+    }
+    return this.runAnthropicLoop(sessionId, userPrompt);
+  }
+
   async send(queryId, prompt) {
     this.ensureConfigured();
 
@@ -394,6 +511,11 @@ class AssistantService {
       const query = await this.queryStore.getById(queryId);
       if (!query) {
         return { error: 'QUERY_NOT_FOUND' };
+      }
+
+      const activeSession = await this.assistantStore.getActiveSessionByQueryId(query.id);
+      if (activeSession) {
+        return { error: 'RUN_ACTIVE', session: activeSession };
       }
 
       const { session } = await this.getOrCreateSession(query);
@@ -423,6 +545,7 @@ class AssistantService {
           this.logger.error('Assistant run failed', {
             queryId,
             sessionId: session.id,
+            provider: this.providerName,
             error: error.message
           });
           await this.assistantStore.markRunFailed(session.id, error.message);
@@ -433,6 +556,7 @@ class AssistantService {
       return {
         accepted: true,
         sessionId: session.id,
+        provider: this.providerName,
         runStatus: current.runStatus,
         runStartedAt: current.runStartedAt
       };
@@ -445,10 +569,11 @@ class AssistantService {
       return { error: 'QUERY_NOT_FOUND' };
     }
 
-    const session = await this.assistantStore.getSessionByQueryId(queryId);
+    const session = await this.assistantStore.getSessionByQueryIdAndProvider(queryId, this.providerName);
     if (!session) {
       return {
         queryId,
+        provider: this.providerName,
         sessionExists: false,
         runStatus: 'IDLE'
       };
@@ -456,6 +581,7 @@ class AssistantService {
 
     return {
       queryId,
+      provider: this.providerName,
       sessionExists: true,
       sessionId: session.id,
       runStatus: session.runStatus,
@@ -473,7 +599,7 @@ class AssistantService {
         return { error: 'QUERY_NOT_FOUND' };
       }
 
-      const session = await this.assistantStore.getSessionByQueryId(queryId);
+      const session = await this.assistantStore.getActiveSessionByQueryId(queryId);
       if (!session) {
         return { error: 'NO_ACTIVE_RUN' };
       }
@@ -487,6 +613,7 @@ class AssistantService {
         return {
           queryId,
           sessionId: latest.id,
+          provider: latest.provider,
           runStatus: latest.runStatus,
           cancelRequestedAt: latest.cancelRequestedAt
         };
@@ -496,6 +623,7 @@ class AssistantService {
         return {
           queryId,
           sessionId: session.id,
+          provider: session.provider,
           runStatus: session.runStatus,
           cancelRequestedAt: session.cancelRequestedAt
         };
@@ -511,10 +639,11 @@ class AssistantService {
       return { error: 'QUERY_NOT_FOUND' };
     }
 
-    const session = await this.assistantStore.getSessionByQueryId(queryId);
+    const session = await this.assistantStore.getSessionByQueryIdAndProvider(queryId, this.providerName);
     if (!session) {
       return {
         queryId,
+        provider: this.providerName,
         sessionExists: false,
         messages: []
       };
@@ -523,6 +652,7 @@ class AssistantService {
     const messages = await this.assistantStore.listMessagesBySessionId(session.id);
     return {
       queryId,
+      provider: this.providerName,
       sessionExists: true,
       sessionId: session.id,
       messages

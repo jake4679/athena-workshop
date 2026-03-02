@@ -670,10 +670,10 @@ function sendAssistantPromptHandler({ services }) {
         runStartedAt: response.runStartedAt
       });
     } catch (error) {
-      if (error.code === 'OPENAI_NOT_CONFIGURED') {
+      if (error.code === 'ASSISTANT_NOT_CONFIGURED') {
         return res.status(503).json({
-          error: 'OPENAI_NOT_CONFIGURED',
-          message: 'OpenAI API key is not configured'
+          error: 'ASSISTANT_NOT_CONFIGURED',
+          message: 'Assistant API key is not configured for the configured provider'
         });
       }
 
