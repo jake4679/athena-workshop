@@ -97,6 +97,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Monaco editor uses schema-aware autocomplete (keywords/tables/columns) and debounced backend validation markers.
 - Frontend includes collapsible assistant panel (response display + prompt input) above query editor.
 - Frontend assistant panel includes send/cancel controls, run status polling, elapsed run timer, and per-query conversation rendering from backend messages.
+- Frontend assistant panel renders assistant responses as sanitized Markdown (with plain-text fallback when Markdown libraries are unavailable).
 - Assistant response bubbles include a `Use` action that copies selected assistant output into the SQL editor.
 - Frontend includes right-side query list populated from `/query`; selecting an item loads SQL and associated state/results.
 - Right-side query list includes delete control for selected query and clears UI state after deletion.

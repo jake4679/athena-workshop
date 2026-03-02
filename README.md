@@ -56,6 +56,7 @@ node src/server.js --config ./config.json --port 4000
 - Assistant prompt send/cancel controls backed by `/query/:id/assistant/*` APIs
 - Assistant prompt submit via `Cmd+Enter` / `Ctrl+Enter` when prompt textarea is focused
 - Assistant run polling (`/assistant/status`) and conversation rendering (`/assistant/messages`)
+- Assistant responses are rendered as sanitized Markdown (with plain-text fallback if Markdown libraries fail to load)
 - Assistant response bubbles include a `Use` action to copy that response into the SQL editor
 - Monaco SQL editor
 - Athena database selector persisted in browser local storage

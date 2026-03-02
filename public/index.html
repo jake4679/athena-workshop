@@ -146,6 +146,45 @@
         position: relative;
       }
 
+      .assistant-msg-markdown {
+        white-space: normal;
+      }
+
+      .assistant-msg-markdown p {
+        margin: 0 0 8px;
+      }
+
+      .assistant-msg-markdown p:last-child {
+        margin-bottom: 0;
+      }
+
+      .assistant-msg-markdown pre {
+        margin: 8px 0;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.8);
+        overflow: auto;
+      }
+
+      .assistant-msg-markdown code {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.78rem;
+      }
+
+      .assistant-msg-markdown ul,
+      .assistant-msg-markdown ol {
+        margin: 0 0 8px 18px;
+      }
+
+      .assistant-msg-markdown h1,
+      .assistant-msg-markdown h2,
+      .assistant-msg-markdown h3,
+      .assistant-msg-markdown h4 {
+        margin: 8px 0 6px;
+        line-height: 1.2;
+      }
+
       .assistant-msg-wrap {
         position: relative;
         display: flex;
@@ -708,6 +747,8 @@
 
     <script src="https://unpkg.com/sql-formatter@15.4.10/dist/sql-formatter.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
     <script>
       window.require = { paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.53.0/min/vs' } };
       window.MonacoEnvironment = {
@@ -915,8 +956,9 @@
               role === 'assistant'
                 ? `<button class="assistant-use-btn" type="button" data-assistant-index="${index}">Use</button>`
                 : '';
-            const extraClass = role === 'assistant' ? 'assistant-msg-with-use' : '';
-            return `<div class="assistant-msg-wrap ${wrapClass}"><div class="assistant-msg ${roleClass} ${extraClass}">${useButton}${escapeHtml(content)}</div></div>`;
+            const extraClass = role === 'assistant' ? 'assistant-msg-with-use assistant-msg-markdown' : '';
+            const renderedContent = role === 'assistant' ? renderMarkdownContent(content) : escapeHtml(content);
+            return `<div class="assistant-msg-wrap ${wrapClass}"><div class="assistant-msg ${roleClass} ${extraClass}">${useButton}${renderedContent}</div></div>`;
           })
           .join('');
         assistantResponseEl.innerHTML = `<div class="assistant-thread">${html}</div>`;
@@ -951,6 +993,20 @@
           .replaceAll('>', '&gt;')
           .replaceAll('"', '&quot;')
           .replaceAll("'", '&#39;');
+      }
+
+      function renderMarkdownContent(value) {
+        const raw = String(value || '');
+        if (!raw.trim()) {
+          return '(empty)';
+        }
+
+        if (!window.marked || !window.DOMPurify) {
+          return escapeHtml(raw);
+        }
+
+        const parsed = window.marked.parse(raw, { breaks: true, gfm: true });
+        return window.DOMPurify.sanitize(parsed);
       }
 
       function renderBasicTable(columns, rows) {
