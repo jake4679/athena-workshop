@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
-const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { loadConfig } = require('./utils/config');
 const logger = require('./utils/logger');
@@ -11,7 +10,7 @@ const { AssistantStore } = require('./services/assistantStore');
 const { AthenaService } = require('./services/athenaService');
 const { AssistantService } = require('./services/assistantService');
 const { LockManager } = require('./services/lockManager');
-const { buildRouter } = require('./routes/router');
+const { buildApp } = require('./app');
 
 function runAwsCliIdentityProbe(timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
@@ -370,20 +369,7 @@ async function startServer() {
   const services = createServices({ queryStore, assistantService, athenaService, lockManager });
   await logAwsSecurityContext(athenaService);
 
-  const app = express();
-  app.use(express.json());
-  app.use(express.static(path.resolve(__dirname, "../public")));
-
-  app.get('/health', (_req, res) => {
-    res.status(200).json({ status: 'ok' });
-  });
-
-  app.use(buildRouter({ services, logger }));
-
-  app.use((err, _req, res, _next) => {
-    logger.error('Unhandled request error', { error: err.message });
-    res.status(500).json({ error: 'INTERNAL_ERROR', message: 'Unexpected server error' });
-  });
+  const app = buildApp({ services, logger });
 
   const interval = setInterval(async () => {
     try {

@@ -7,20 +7,21 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - `GET /database`: list Athena databases.
 - `GET /database/:database/tables`: list tables for a selected Athena database.
 - `GET /database/:database/:table/schema`: return schema (columns/types) for a selected table.
-- `POST /query`: submit query from JSON body (`query`), generate and return identifier.
-- `POST /query/validate`: validate SQL syntax using Athena `EXPLAIN`; returns markers suitable for editor diagnostics.
+- `POST /query`: submit query from JSON body (`query`, optional `database`), generate and return identifier.
+- `POST /query/validate`: validate SQL syntax using Athena `EXPLAIN` from JSON body (`query`, optional `database`); returns markers suitable for editor diagnostics.
 - `GET /query`: list all queries and their metadata.
-- `PUT /query/:identifier`: update query `name`, query body (`query`), and/or selected database (`database`).
-- `DELETE /query/:identifier`: delete query metadata and any local downloaded results.
-- `GET /query/:identifier/status`: return query state and metadata.
-- `GET /query/:identifier/results`: return results and timestamp when available.
-- `POST /query/:identifier/refresh`: rerun existing query and clear prior results.
-- `POST /query/:identifier/cancel`: cancel running Athena query when possible.
-- `GET /query/:identifier/results` also supports pagination query params: `limit`/`offset` and `page`/`size`.
-- `POST /query/:identifier/assistant/send`: submit assistant prompt for a query and start an async assistant run.
-- `GET /query/:identifier/assistant/status`: return assistant run state metadata for a query.
-- `POST /query/:identifier/assistant/cancel`: request cancellation of active assistant run for a query.
-- `GET /query/:identifier/assistant/messages`: return persisted assistant conversation messages for a query.
+- `PUT /query/:id`: update query `name`, query body (`query`), and/or selected database (`database`).
+- `DELETE /query/:id`: delete query metadata and any local downloaded results.
+- `GET /query/:id/status`: return query state and metadata.
+- `GET /query/:id/results`: return results and timestamp when available.
+- `POST /query/:id/refresh`: rerun existing query and clear prior results.
+- `POST /query/:id/cancel`: cancel running Athena query when possible.
+- `GET /query/:id/results` also supports pagination query params: `limit`/`offset` and `page`/`size`.
+- `POST /query/:id/assistant/send`: submit assistant prompt for a query and start an async assistant run.
+- `GET /query/:id/assistant/status`: return assistant run state metadata for a query.
+- `POST /query/:id/assistant/cancel`: request cancellation of active assistant run for a query.
+- `GET /query/:id/assistant/messages`: return persisted assistant conversation messages for a query.
+- `GET /health`: health check endpoint.
 
 ## Behavior Requirements
 - Unknown query id should return an appropriate response.
@@ -80,7 +81,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Athena integration using AWS SDK v3.
 - Background poller updates state and downloads results on success.
 - Per-query lock manager to avoid race conditions between poll/cancel/refresh.
-- Results stored under `./results/<query-id>.json`.
+- Results stored under configured `server.resultsDir` (default: `./results`) as `<query-id>.json`.
 - JSON logger includes timestamp/level/file/line/message.
 - Config loaded from `--config <path>`.
 - OpenAI tool schemas are defined under `src/openai` (`toolSchemas.js` / `index.js`) and used by assistant runtime.
@@ -104,3 +105,6 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - If Tabulator is unavailable or fails to initialize, frontend falls back to a basic HTML table rendering.
 - `scripts/exercise.sh` validates base API behavior plus paginated results behavior, and supports SQL overrides via env vars (`QUERY1_SQL`, `QUERY2_SQL`, `PAGINATION_SQL`).
 - `scripts/exercise-assistant.sh` validates assistant send/status/messages/cancel behavior, logs request/response pairs to a file (`LOG_FILE`), and supports prompt/query overrides (`ASSISTANT_PROMPT`, `QUERY_SQL`; empty `QUERY_SQL` uses `SELECT 1` only for query creation).
+- App construction is factored into `src/app.js` (`buildApp`) so endpoint tests can inject mocked services.
+- `tests/query.create.test.js` uses Node's built-in test runner with mocked services to validate `POST /query` contract behavior (202/400/500 paths).
+- `scripts/run-test-report.sh` writes timestamped test artifacts to `./results/test-runs/<timestamp>/` for iteration (`npm run test:post-query:report`).

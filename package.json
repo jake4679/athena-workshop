@@ -6,7 +6,10 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js --config ./config.json",
-    "start:dev": "node src/server.js --config ./config.json"
+    "start:dev": "node src/server.js --config ./config.json",
+    "test": "node --test",
+    "test:post-query": "node --test tests/query.create.test.js",
+    "test:post-query:report": "bash ./scripts/run-test-report.sh tests/query.create.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-athena": "^3.864.0",

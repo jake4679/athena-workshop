@@ -93,3 +93,18 @@ Environment overrides for assistant exercise:
 - `ASSISTANT_PROMPT` (default: `Give me a SQL query that gives me the current date time`)
 - `QUERY_SQL` (default: empty; script uses `SELECT 1` only for required query creation step)
 - `LOG_FILE` (default: `./results/exercise-assistant-<timestamp>.log`; includes request/response pairs)
+
+## Automated Tests
+- Run all tests:
+  ```bash
+  npm test
+  ```
+- Run the mocked `POST /query` endpoint pilot test:
+  ```bash
+  npm run test:post-query
+  ```
+- Run the same test with artifact logging for iteration:
+  ```bash
+  npm run test:post-query:report
+  ```
+  This writes timestamped outputs under `./results/test-runs/<timestamp>/` including console output and run metadata.
