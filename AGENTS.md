@@ -61,6 +61,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
   - env-var key resolution
   - optional config-file key fallback
   - configurable `assistantSeedInstruction` for first-message session seeding
+  - configurable `maxToolRounds` for assistant tool-loop ceiling (default `1000`)
 - Provider-specific settings should be present in config (`providers` block), including:
   - `providers.openai` (`model`, `baseURL`)
   - `providers.anthropic` (`model`, `baseURL`, `version`, `maxTokens`)
@@ -99,6 +100,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Provider-agnostic assistant tool schemas are defined under `src/assistant/tools.js` and translated per provider.
 - Assistant integration supports `openai` and `anthropic` providers via `/query/:id/assistant/*` endpoints with a shared tool-call execution loop.
 - Assistant session seed instruction is configurable via `assistant.assistantSeedInstruction`.
+- Assistant tool-loop ceiling is configurable via `assistant.maxToolRounds` (default `1000`), with cancellation expected via assistant cancel endpoint/UI when needed.
 - Assistant tools include `run_read_query` for bounded read sampling (parser-guarded SELECT-only execution, max 500 rows, max 5 calls per run, capped columns, audit logging).
 - Static frontend served from `/` with Monaco SQL editor, SQL format action, submit, polling, and results view.
 - Monaco editor uses schema-aware autocomplete (keywords/tables/columns) and debounced backend validation markers.
@@ -125,3 +127,4 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Endpoint tests use Node's built-in test runner and validate `POST /query` and `POST /query/:id/cancel` with real `AthenaService` + `QueryStore` codepaths, mocking only AWS `client.send` and MySQL `pool.execute`.
 - Shared test harness utilities live under `tests/helpers/serviceHarness.js`.
 - `scripts/run-test-report.sh` writes timestamped test artifacts to `./results/test-runs/<timestamp>/` for iteration (`npm run test:post-query:report`, `npm run test:cancel-query:report`).
+- Docker support is available via repo-root `Dockerfile` (runtime config injected via mounted `config.json` and `CONFIG_PATH` env var).

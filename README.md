@@ -15,6 +15,7 @@ Minimal Node.js HTTP service for submitting and managing AWS Athena queries.
    - Assistant settings are configured under `assistant` with provider selection (`assistant.provider`) and generic key resolution (`assistant.apiKeyEnvVar` / `assistant.apiKey`).
    - Provider-specific options are configured under `providers.<provider>` (for example `providers.openai.model` or `providers.anthropic.model`).
    - `assistant.assistantSeedInstruction` controls the default instruction injected when a query's assistant session is first created.
+   - `assistant.maxToolRounds` controls assistant tool-loop ceiling (default/recommended: `1000`; cancel via `/query/:id/assistant/cancel` or UI cancel).
 5. Install dependencies:
    ```bash
    npm install
@@ -28,6 +29,25 @@ Optional port override:
 ```bash
 node src/server.js --config ./config.json --port 4000
 ```
+
+## Docker
+Build image:
+```bash
+docker build -t athena-query-manager .
+```
+
+Run container (mount config + expose port):
+```bash
+docker run --rm \
+  -p 3000:3000 \
+  -v "$(pwd)/config.json:/app/config.json:ro" \
+  -e PORT=3000 \
+  athena-query-manager
+```
+
+Notes:
+- Container expects config at `CONFIG_PATH` (default `/app/config.json`).
+- App still requires access to your MySQL instance and AWS credentials.
 
 ## Endpoints
 - `GET /database` (list available Athena databases)

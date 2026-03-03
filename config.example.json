@@ -15,7 +15,8 @@
     "provider": "openai",
     "apiKeyEnvVar": "ASSISTANT_API_KEY",
     "apiKey": "",
-    "assistantSeedInstruction": "You are a SQL assistant for AWS Athena. Provide concise, practical guidance and valid Athena SQL."
+    "assistantSeedInstruction": "You are a SQL assistant for AWS Athena. Provide concise, practical guidance and valid Athena SQL.",
+    "maxToolRounds": 1000
   },
   "providers": {
     "openai": {

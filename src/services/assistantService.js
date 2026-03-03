@@ -6,7 +6,7 @@ const { rewriteReadQueryWithHardLimit } = require('../assistant/readQueryGuard')
 
 const MAX_SCHEMA_TABLES = 50;
 const MAX_COLUMNS_PER_TABLE = 50;
-const MAX_TOOL_ROUNDS = 6;
+const DEFAULT_MAX_TOOL_ROUNDS = 1000;
 const MAX_READ_QUERY_TOOL_CALLS = 5;
 const READ_QUERY_ROW_LIMIT = 500;
 const DEFAULT_READ_QUERY_MAX_COLUMNS = 30;
@@ -156,6 +156,16 @@ function summarizeForLog(value, maxLength = 800) {
   return text.length > maxLength ? `${text.slice(0, maxLength)}...<truncated>` : text;
 }
 
+function isMissingToolOutputError(error) {
+  const msg = String(error?.message || '');
+  return /No tool output found for function call/i.test(msg);
+}
+
+function isToolLoopExceededError(error) {
+  const msg = String(error?.message || '');
+  return /Assistant tool loop exceeded maximum rounds/i.test(msg);
+}
+
 class AssistantService {
   constructor({ assistantStore, queryStore, athenaService, lockManager, config, logger }) {
     this.assistantStore = assistantStore;
@@ -168,6 +178,7 @@ class AssistantService {
     this.providerName = runtimeConfig.provider;
     this.assistantSeedInstruction = runtimeConfig.assistantSeedInstruction;
     this.toolDefinitions = assistantToolDefinitions;
+    this.maxToolRounds = Math.max(1, Number(config.assistant?.maxToolRounds || DEFAULT_MAX_TOOL_ROUNDS));
 
     if (this.providerName === 'openai') {
       this.provider = new OpenAIProvider({
@@ -440,7 +451,12 @@ class AssistantService {
     const session = await this.assistantStore.getSessionById(sessionId);
     const messages = await this.assistantStore.listMessagesBySessionId(sessionId);
 
-    let previousResponseId = session?.providerConversationId || session?.openaiConversationId || null;
+    const failedWithDanglingTools =
+      /No tool output found for function call|Assistant tool loop exceeded maximum rounds/i.test(
+        String(session?.lastErrorMessage || '')
+      );
+    let previousResponseId =
+      failedWithDanglingTools ? null : session?.providerConversationId || session?.openaiConversationId || null;
     let input = previousResponseId
       ? [
           {
@@ -450,17 +466,38 @@ class AssistantService {
         ]
       : mapStoredMessagesToOpenAiInput(messages, userPrompt);
 
-    for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+    for (let round = 0; round < this.maxToolRounds; round += 1) {
       if (await this.shouldCancel(sessionId)) {
         await this.assistantStore.markRunCancelled(sessionId);
         return { cancelled: true };
       }
 
-      const providerResponse = await this.provider.send({
-        input,
-        previousResponseId,
-        tools: this.toolDefinitions
-      });
+      let providerResponse;
+      try {
+        providerResponse = await this.provider.send({
+          input,
+          previousResponseId,
+          tools: this.toolDefinitions
+        });
+      } catch (error) {
+        if (isMissingToolOutputError(error) && previousResponseId) {
+          this.logger.warn('Assistant OpenAI conversation desynced; resetting conversation linkage and retrying', {
+            queryId: runContext.queryId || null,
+            sessionId: runContext.sessionId || null,
+            previousResponseId
+          });
+          previousResponseId = null;
+          await this.assistantStore.updateProviderConversationId(sessionId, null);
+          input = mapStoredMessagesToOpenAiInput(messages, userPrompt);
+          providerResponse = await this.provider.send({
+            input,
+            previousResponseId,
+            tools: this.toolDefinitions
+          });
+        } else {
+          throw error;
+        }
+      }
 
       previousResponseId = providerResponse.providerConversationId || previousResponseId;
       await this.persistModelOutput(sessionId, providerResponse);
@@ -554,14 +591,15 @@ class AssistantService {
       }
     }
 
-    throw new Error(`Assistant tool loop exceeded maximum rounds (${MAX_TOOL_ROUNDS})`);
+    await this.assistantStore.updateProviderConversationId(sessionId, null);
+    throw new Error(`Assistant tool loop exceeded maximum rounds (${this.maxToolRounds})`);
   }
 
   async runAnthropicLoop(sessionId, userPrompt, runContext = {}) {
     const messages = await this.assistantStore.listMessagesBySessionId(sessionId);
     const context = mapStoredMessagesToAnthropicContext(messages, userPrompt);
 
-    for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+    for (let round = 0; round < this.maxToolRounds; round += 1) {
       if (await this.shouldCancel(sessionId)) {
         await this.assistantStore.markRunCancelled(sessionId);
         return { cancelled: true };
@@ -673,7 +711,7 @@ class AssistantService {
       }
     }
 
-    throw new Error(`Assistant tool loop exceeded maximum rounds (${MAX_TOOL_ROUNDS})`);
+    throw new Error(`Assistant tool loop exceeded maximum rounds (${this.maxToolRounds})`);
   }
 
   async runAssistantLoop(sessionId, userPrompt, runContext = {}) {
@@ -727,6 +765,9 @@ class AssistantService {
             readQueryCalls: 0
           }
         }).catch(async (error) => {
+          if (isMissingToolOutputError(error) || isToolLoopExceededError(error)) {
+            await this.assistantStore.updateProviderConversationId(session.id, null);
+          }
           this.logger.error('Assistant run failed', {
             queryId,
             sessionId: session.id,
