@@ -9,6 +9,7 @@ const {
   getQueryListHandler,
   getQueryStatusHandler,
   getQueryResultsHandler,
+  downloadQueryResultsHandler,
   refreshQueryHandler,
   cancelQueryHandler,
   deleteQueryHandler,
@@ -36,6 +37,7 @@ function buildRouter(context) {
   router.put('/query/:id', updateQueryHandler(context));
   router.get('/query/:id/status', getQueryStatusHandler(context));
   router.get('/query/:id/results', getQueryResultsHandler(context));
+  router.get('/query/:id/results/download', downloadQueryResultsHandler(context));
   router.delete('/query/:id', deleteQueryHandler(context));
   router.post('/query/:id/refresh', refreshQueryHandler(context));
   router.post('/query/:id/cancel', cancelQueryHandler(context));

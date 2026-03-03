@@ -61,6 +61,7 @@ Notes:
 - `GET /query/:id/status`
 - `GET /query/:id/results`
 - Pagination on results: `GET /query/:id/results?limit=25&offset=0` or `GET /query/:id/results?page=1&size=25`
+- Full results download: `GET /query/:id/results/download?format=csv|excel|xlsx|parquet`
 - `POST /query/:id/refresh`
 - `POST /query/:id/cancel`
 - `POST /query/:id/assistant/send` body: `{ "prompt": "..." }` (starts assistant run; lazy-creates session on first send)
@@ -83,6 +84,7 @@ Notes:
 - Assistant prompt submit via `Cmd+Enter` / `Ctrl+Enter` when prompt textarea is focused
 - Assistant run polling (`/assistant/status`) and conversation rendering (`/assistant/messages`)
 - Assistant responses are rendered as sanitized Markdown (with plain-text fallback if Markdown libraries fail to load)
+- Assistant panel shows optimistic user messages immediately on send and a live animated typing indicator while assistant run is active
 - Assistant response bubbles include a `Use` action to copy that response into the SQL editor
 - Monaco SQL editor
 - Athena database selector persisted in browser local storage
@@ -94,6 +96,8 @@ Notes:
 - Query metadata panel
 - Tabulator table for tabular results with remote pagination
 - HTTP/HTTPS values in Tabulator cells render as clickable links
+- Tabular result rows support click-to-select highlighting (Tabulator and fallback HTML table)
+- Results panel includes full-results download controls with format selection (CSV, Excel, Parquet)
 - Right-side query list (`/query`) with click-to-load query text and available results
 - Right-side query list includes delete action for selected query
 - Query metadata includes editable `name` value from backend (defaulted to query ID on create)

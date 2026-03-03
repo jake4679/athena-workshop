@@ -1,4 +1,21 @@
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { execFile } = require('child_process');
+
+function runPythonExport({ inputPath, format, outputPath }) {
+  const scriptPath = path.resolve(process.cwd(), 'scripts/export_results.py');
+  return new Promise((resolve, reject) => {
+    execFile('python3', [scriptPath, inputPath, format, outputPath], (error, _stdout, stderr) => {
+      if (error) {
+        const detail = stderr && String(stderr).trim() ? String(stderr).trim() : error.message;
+        reject(new Error(detail));
+        return;
+      }
+      resolve();
+    });
+  });
+}
 
 function parseIntOrNull(value) {
   if (value === undefined || value === null || value === '') {
@@ -532,6 +549,90 @@ function getQueryResultsHandler({ services }) {
   };
 }
 
+function downloadQueryResultsHandler({ services, logger }) {
+  return async function downloadQueryResults(req, res) {
+    const id = req.params.id;
+    const formatRaw = String(req.query.format || '').trim().toLowerCase();
+    const format = formatRaw || 'csv';
+    const supportedFormats = new Set(['csv', 'excel', 'xlsx', 'parquet']);
+    if (!supportedFormats.has(format)) {
+      return res.status(400).json({
+        error: 'INVALID_DOWNLOAD_FORMAT',
+        message: 'format must be one of: csv, excel, xlsx, parquet'
+      });
+    }
+
+    try {
+      const query = await services.queryStore.getById(id);
+      if (!query) {
+        return notFoundResponse(res, id);
+      }
+
+      if (query.status === 'RUNNING') {
+        return res.status(409).json({
+          error: 'QUERY_RUNNING',
+          message: 'Results are not ready while query is running',
+          id: query.id,
+          status: query.status
+        });
+      }
+
+      if (query.status === 'CANCELLED') {
+        return res.status(409).json({
+          error: 'QUERY_CANCELLED',
+          message: 'Query has been cancelled',
+          id: query.id,
+          status: query.status
+        });
+      }
+
+      if (query.status !== 'SUCCEEDED' || !query.resultPath) {
+        return res.status(409).json({
+          error: 'RESULTS_NOT_AVAILABLE',
+          message: 'No results available for this query',
+          id: query.id,
+          status: query.status
+        });
+      }
+
+      const extension = format === 'excel' || format === 'xlsx' ? 'xlsx' : format;
+      const outputPath = path.join(
+        os.tmpdir(),
+        `athena-query-${id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`
+      );
+
+      await runPythonExport({
+        inputPath: query.resultPath,
+        format,
+        outputPath
+      });
+
+      const baseName = (query.name || query.id || 'query_results').replace(/[^a-zA-Z0-9._-]+/g, '_');
+      const fileName = `${baseName}.${extension}`;
+
+      logger?.info?.('Query results download generated', {
+        queryId: query.id,
+        format,
+        outputPath
+      });
+
+      return res.download(outputPath, fileName, () => {
+        fs.unlink(outputPath, () => {});
+      });
+    } catch (error) {
+      logger?.error?.('Failed to prepare query results download', {
+        queryId: id,
+        format,
+        error: error.message
+      });
+      return res.status(500).json({
+        error: 'RESULTS_DOWNLOAD_FAILED',
+        message: 'Failed to generate downloadable query results'
+      });
+    }
+  };
+}
+
 function refreshQueryHandler({ services }) {
   return async function refreshQuery(req, res) {
     try {
@@ -760,6 +861,7 @@ module.exports = {
   getQueryListHandler,
   getQueryStatusHandler,
   getQueryResultsHandler,
+  downloadQueryResultsHandler,
   refreshQueryHandler,
   cancelQueryHandler,
   deleteQueryHandler,

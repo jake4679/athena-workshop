@@ -14,6 +14,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - `DELETE /query/:id`: delete query metadata and any local downloaded results.
 - `GET /query/:id/status`: return query state and metadata.
 - `GET /query/:id/results`: return results and timestamp when available.
+- `GET /query/:id/results/download`: download full query results in `csv`, `excel`/`xlsx`, or `parquet` format.
 - `POST /query/:id/refresh`: rerun existing query and clear prior results.
 - `POST /query/:id/cancel`: cancel running Athena query when possible.
 - `GET /query/:id/results` also supports pagination query params: `limit`/`offset` and `page`/`size`.
@@ -107,6 +108,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Frontend includes collapsible assistant panel (response display + prompt input) above query editor.
 - Frontend assistant panel includes send/cancel controls, run status polling, elapsed run timer, and per-query conversation rendering from backend messages.
 - Frontend assistant panel renders assistant responses as sanitized Markdown (with plain-text fallback when Markdown libraries are unavailable).
+- Frontend assistant panel shows optimistic user messages immediately on send and an animated typing indicator while assistant runs are active.
 - Assistant response bubbles include a `Use` action that copies selected assistant output into the SQL editor.
 - Frontend includes right-side query list populated from `/query`; selecting an item loads SQL and associated state/results.
 - Right-side query list includes delete control for selected query and clears UI state after deletion.
@@ -119,6 +121,8 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - If Athena response includes `columns`, rows are rendered using Tabulator with remote pagination; otherwise JSON is shown.
 - Tabulator renders HTTP/HTTPS cell values as clickable links.
 - If Tabulator is unavailable or fails to initialize, frontend falls back to a basic HTML table rendering.
+- Tabular result rows support click-to-select highlighting in both Tabulator mode and basic HTML table fallback.
+- Results panel includes full-results download controls with selectable format (`CSV`, `Excel`, `Parquet`) wired to `/query/:id/results/download`.
 - `scripts/exercise.sh` validates base API behavior plus paginated results behavior, and supports SQL overrides via env vars (`QUERY1_SQL`, `QUERY2_SQL`, `PAGINATION_SQL`).
 - `scripts/exercise-assistant.sh` validates assistant send/status/messages/cancel behavior, logs request/response pairs to a file (`LOG_FILE`), and supports prompt/query overrides (`ASSISTANT_PROMPT`, `QUERY_SQL`; empty `QUERY_SQL` uses `SELECT 1` only for query creation).
 - App construction is factored into `src/app.js` (`buildApp`) so endpoint tests can inject mocked services.

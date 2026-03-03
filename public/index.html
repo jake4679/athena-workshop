@@ -212,6 +212,44 @@
         color: #4b5563;
       }
 
+      .assistant-msg-thinking {
+        background: #f3f7eb;
+        min-width: 58px;
+      }
+
+      .assistant-thinking-dots {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .assistant-thinking-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #5f6b76;
+        animation: assistant-dot-bloop 1s infinite ease-in-out;
+      }
+
+      .assistant-thinking-dot:nth-child(2) {
+        animation-delay: 0.14s;
+      }
+
+      .assistant-thinking-dot:nth-child(3) {
+        animation-delay: 0.28s;
+      }
+
+      @keyframes assistant-dot-bloop {
+        0%, 80%, 100% {
+          transform: translateY(0);
+          opacity: 0.5;
+        }
+        40% {
+          transform: translateY(-4px);
+          opacity: 1;
+        }
+      }
+
       .assistant-use-btn {
         position: absolute;
         top: 4px;
@@ -352,6 +390,24 @@
 
       .status-err {
         color: var(--danger);
+      }
+
+      .download-controls {
+        margin-top: 10px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .download-format {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.8rem;
+        background: #fff;
+        color: var(--ink);
       }
 
       .results {
@@ -591,6 +647,30 @@
         min-width: 100%;
       }
 
+      .tabulator .tabulator-row.tabulator-selected {
+        background: #fff59d;
+      }
+
+      .results-basic-table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      .results-basic-table th,
+      .results-basic-table td {
+        border-bottom: 1px solid var(--border);
+        padding: 6px 8px;
+        text-align: left;
+      }
+
+      .results-basic-table tbody tr {
+        cursor: pointer;
+      }
+
+      .results-basic-table tbody tr.results-basic-row-selected {
+        background: #fff59d;
+      }
+
       pre {
         margin: 0;
         font-family: "IBM Plex Mono", monospace;
@@ -724,6 +804,14 @@
                 <div id="tabularView" class="table-wrap" style="display: none"></div>
                 <pre id="resultsView">No query selected yet.</pre>
               </div>
+              <div class="download-controls">
+                <select id="downloadFormat" class="download-format" aria-label="Download format">
+                  <option value="csv">CSV</option>
+                  <option value="excel">Excel (.xlsx)</option>
+                  <option value="parquet">Parquet (.parquet)</option>
+                </select>
+                <button id="downloadResultsBtn" class="btn-light" type="button">Download Results</button>
+              </div>
               <div id="resultsDebug" class="debug-banner">Debug: idle</div>
             </div>
           </section>
@@ -768,6 +856,7 @@
       let pollTimer = null;
       let queryListTimer = null;
       let resultsTable = null;
+      let selectedBasicTableRow = null;
       let selectedQueryId = null;
       let schemaCollapsed = false;
       let queryListCollapsed = false;
@@ -783,6 +872,9 @@
       let assistantRunStatus = 'IDLE';
       let assistantPollQueryId = null;
       let assistantVisibleMessages = [];
+      let assistantServerMessages = [];
+      let assistantPendingUserMessage = null;
+      let assistantThinking = false;
       let completionProviderRegistered = false;
       const VALIDATION_DEBOUNCE_MS = 650;
       const UI_STATE_STORAGE_KEY = 'athena_query_console_ui_state_v1';
@@ -808,6 +900,8 @@
       const metaSubmittedAtEl = document.getElementById('metaSubmittedAt');
       const metaResultReceivedAtEl = document.getElementById('metaResultReceivedAt');
       const resultsDebugEl = document.getElementById('resultsDebug');
+      const downloadFormatEl = document.getElementById('downloadFormat');
+      const downloadResultsBtn = document.getElementById('downloadResultsBtn');
       const queryListItemsEl = document.getElementById('queryListItems');
       const refreshListBtn = document.getElementById('refreshListBtn');
       const deleteQueryBtn = document.getElementById('deleteQueryBtn');
@@ -903,6 +997,7 @@
 
       function setAssistantRunStatus(status, runStartedAt) {
         assistantRunStatus = status || 'IDLE';
+        assistantThinking = assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING';
         if (assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING') {
           startAssistantElapsedTimer(runStartedAt || (assistantRunStartedAt ? assistantRunStartedAt.toISOString() : null));
         } else {
@@ -916,17 +1011,48 @@
         const running = assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING';
         sendAssistantBtn.disabled = running;
         cancelAssistantBtn.disabled = !running;
+        renderAssistantThread();
       }
 
       function renderAssistantMessages(messages) {
-        assistantVisibleMessages = [];
-        if (!Array.isArray(messages) || messages.length === 0) {
-          assistantResponseEl.innerHTML = '<div class="assistant-empty">Assistant responses will appear here.</div>';
-          return;
+        assistantServerMessages = Array.isArray(messages) ? messages : [];
+        if (assistantPendingUserMessage) {
+          const pendingNormalized = String(assistantPendingUserMessage || '').trim();
+          const hasMatchingServerUser = assistantServerMessages.some(
+            (message) =>
+              String(message.role || '').toLowerCase() === 'user' &&
+              String(message.content || '').trim() === pendingNormalized
+          );
+          if (hasMatchingServerUser) {
+            assistantPendingUserMessage = null;
+          }
         }
+        renderAssistantThread();
+      }
 
-        const visible = messages.filter((message) => ['user', 'assistant', 'tool'].includes(message.role));
-        if (visible.length === 0) {
+      function buildAssistantRenderableMessages() {
+        const visible = assistantServerMessages.filter((message) => ['user', 'assistant', 'tool'].includes(message.role));
+        if (assistantPendingUserMessage) {
+          const pendingContent = String(assistantPendingUserMessage || '').trim();
+          const last = visible[visible.length - 1];
+          const isDuplicateTail =
+            last &&
+            String(last.role || '').toLowerCase() === 'user' &&
+            String(last.content || '').trim() === pendingContent;
+          if (!isDuplicateTail) {
+            visible.push({
+              role: 'user',
+              content: pendingContent
+            });
+          }
+        }
+        return visible;
+      }
+
+      function renderAssistantThread() {
+        assistantVisibleMessages = [];
+        const visible = buildAssistantRenderableMessages();
+        if (visible.length === 0 && !assistantThinking) {
           assistantResponseEl.innerHTML = '<div class="assistant-empty">Assistant responses will appear here.</div>';
           return;
         }
@@ -961,7 +1087,10 @@
             return `<div class="assistant-msg-wrap ${wrapClass}"><div class="assistant-msg ${roleClass} ${extraClass}">${useButton}${renderedContent}</div></div>`;
           })
           .join('');
-        assistantResponseEl.innerHTML = `<div class="assistant-thread">${html}</div>`;
+        const thinkingHtml = assistantThinking
+          ? `<div class="assistant-msg-wrap assistant-msg-wrap-assistant"><div class="assistant-msg assistant-msg-assistant assistant-msg-thinking"><span class="assistant-thinking-dots"><span class="assistant-thinking-dot"></span><span class="assistant-thinking-dot"></span><span class="assistant-thinking-dot"></span></span></div></div>`
+          : '';
+        assistantResponseEl.innerHTML = `<div class="assistant-thread">${html}${thinkingHtml}</div>`;
         assistantResponseEl.scrollTop = assistantResponseEl.scrollHeight;
       }
 
@@ -970,6 +1099,7 @@
           resultsTable.destroy();
           resultsTable = null;
         }
+        selectedBasicTableRow = null;
         tabularViewEl.innerHTML = '';
         tabularViewEl.style.display = 'none';
         resultsEl.textContent = JSON.stringify(data, null, 2);
@@ -1009,11 +1139,31 @@
         return window.DOMPurify.sanitize(parsed);
       }
 
+      function parseDownloadFileName(contentDisposition, fallbackName) {
+        if (typeof contentDisposition !== 'string' || !contentDisposition) {
+          return fallbackName;
+        }
+        const utf8Match = contentDisposition.match(/filename\\*=UTF-8''([^;]+)/i);
+        if (utf8Match && utf8Match[1]) {
+          try {
+            return decodeURIComponent(utf8Match[1]);
+          } catch (_error) {
+            return utf8Match[1];
+          }
+        }
+        const basicMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+        if (basicMatch && basicMatch[1]) {
+          return basicMatch[1];
+        }
+        return fallbackName;
+      }
+
       function renderBasicTable(columns, rows) {
+        selectedBasicTableRow = null;
         const safeRows = Array.isArray(rows) ? rows : [];
         const header = columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('');
         const body = safeRows
-          .map((row) => {
+          .map((row, rowIndex) => {
             const rowCells = Array.isArray(row) ? row : [];
             const cells = columns
               .map((_, index) => {
@@ -1021,13 +1171,37 @@
                 return `<td>${value === null || value === undefined ? '' : escapeHtml(value)}</td>`;
               })
               .join('');
-            return `<tr>${cells}</tr>`;
+            return `<tr data-row-index="${rowIndex}">${cells}</tr>`;
           })
           .join('');
-        tabularViewEl.innerHTML = `<table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>`;
+        tabularViewEl.innerHTML = `<table class="results-basic-table"><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>`;
         tabularViewEl.style.display = 'block';
         resultsEl.style.display = 'none';
         resultsDebugEl.textContent = `Debug: basic table fallback | columns=${columns.length} rows=${safeRows.length}`;
+
+        const tbody = tabularViewEl.querySelector('tbody');
+        if (tbody) {
+          tbody.addEventListener('click', (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) {
+              return;
+            }
+            const row = target.closest('tr');
+            if (!row) {
+              return;
+            }
+            if (selectedBasicTableRow && selectedBasicTableRow !== row) {
+              selectedBasicTableRow.classList.remove('results-basic-row-selected');
+            }
+            if (selectedBasicTableRow === row) {
+              row.classList.remove('results-basic-row-selected');
+              selectedBasicTableRow = null;
+              return;
+            }
+            row.classList.add('results-basic-row-selected');
+            selectedBasicTableRow = row;
+          });
+        }
       }
 
       function mapRowsToObjects(columns, rows) {
@@ -1140,6 +1314,7 @@
             layout: 'fitData',
             maxHeight: '420px',
             columns: tableColumns,
+            selectableRows: 1,
             pagination: true,
             paginationMode: 'remote',
             paginationInitialPage: 1,
@@ -1200,6 +1375,13 @@
                 ...response,
                 data: []
               };
+            },
+            rowClick: (_e, row) => {
+              if (row.isSelected()) {
+                row.deselect();
+                return;
+              }
+              row.select();
             }
           });
           resultsTable.setPage(1);
@@ -1777,6 +1959,9 @@
           clearAssistantStatusPolling();
           stopAssistantElapsedTimer();
           assistantRunStartedAt = null;
+          assistantPendingUserMessage = null;
+          assistantThinking = false;
+          assistantServerMessages = [];
           setAssistantRunStatus('IDLE', null);
           renderAssistantMessages([]);
           return;
@@ -1801,11 +1986,14 @@
           return;
         }
 
+        assistantPendingUserMessage = prompt;
+        assistantThinking = true;
+        assistantPromptInputEl.value = '';
+        renderAssistantThread();
         sendAssistantBtn.disabled = true;
         try {
           const res = await apiRequest(`/query/${selectedQueryId}/assistant/send`, 'POST', { prompt });
           if (res.ok) {
-            assistantPromptInputEl.value = '';
             setAssistantRunStatus(res.json.runStatus || 'RUNNING', res.json.runStartedAt || null);
             renderStatus('Assistant prompt submitted.', false);
             startAssistantStatusPolling(selectedQueryId);
@@ -1813,14 +2001,24 @@
           }
 
           if (res.status === 409 && res.json?.error === 'ASSISTANT_RUN_ACTIVE') {
+            assistantPendingUserMessage = null;
+            assistantPromptInputEl.value = prompt;
             setAssistantRunStatus(res.json.runStatus || 'RUNNING', assistantRunStartedAt ? assistantRunStartedAt.toISOString() : null);
             renderStatus('Assistant run already in progress.', true);
             startAssistantStatusPolling(selectedQueryId);
             return;
           }
 
+          assistantPendingUserMessage = null;
+          assistantThinking = false;
+          assistantPromptInputEl.value = prompt;
+          renderAssistantThread();
           renderStatus(`Assistant send failed (${res.status}): ${res.json.message || 'unknown error'}`, true);
         } catch (error) {
+          assistantPendingUserMessage = null;
+          assistantThinking = false;
+          assistantPromptInputEl.value = prompt;
+          renderAssistantThread();
           renderStatus(`Assistant send error: ${error.message}`, true);
         } finally {
           if (!(assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING')) {
@@ -2184,6 +2382,49 @@
         cancelAssistantRun().catch((error) => {
           renderStatus(`Assistant cancel error: ${error.message}`, true);
         });
+      });
+
+      downloadResultsBtn.addEventListener('click', async () => {
+        if (!selectedQueryId) {
+          renderStatus('Select a query before downloading results.', true);
+          return;
+        }
+
+        const format = String(downloadFormatEl.value || 'csv').trim().toLowerCase();
+        downloadResultsBtn.disabled = true;
+        try {
+          const response = await fetch(
+            `/query/${selectedQueryId}/results/download?format=${encodeURIComponent(format)}`,
+            { method: 'GET' }
+          );
+
+          if (!response.ok) {
+            const errorJson = await response.json().catch(() => ({}));
+            throw new Error(errorJson.message || `Download failed (${response.status})`);
+          }
+
+          const blob = await response.blob();
+          const fallbackName = `query-${selectedQueryId}.${format === 'excel' ? 'xlsx' : format}`;
+          const fileName = parseDownloadFileName(
+            response.headers.get('Content-Disposition'),
+            fallbackName
+          );
+
+          const objectUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = objectUrl;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(objectUrl);
+
+          renderStatus(`Downloaded full results as ${fileName}`, false);
+        } catch (error) {
+          renderStatus(`Download failed: ${error.message}`, true);
+        } finally {
+          downloadResultsBtn.disabled = false;
+        }
       });
 
       assistantPromptInputEl.addEventListener('keydown', (event) => {
