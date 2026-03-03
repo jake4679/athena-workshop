@@ -87,7 +87,7 @@ function summarizeSchema(schemaResult) {
   };
 }
 
-function mapStoredMessagesToOpenAiInput(messages, userPrompt) {
+function mapStoredMessagesToOpenAiInput(messages) {
   const seed = messages.find((message) => message.role === 'system');
   const input = [];
 
@@ -98,9 +98,16 @@ function mapStoredMessagesToOpenAiInput(messages, userPrompt) {
     });
   }
 
-  input.push({
-    role: 'user',
-    content: [{ type: 'input_text', text: String(userPrompt || '').trim() }]
+  const conversational = messages.filter((message) => message.role === 'user' || message.role === 'assistant');
+  conversational.forEach((message) => {
+    const text = String(message.content || '').trim();
+    if (!text) {
+      return;
+    }
+    input.push({
+      role: message.role,
+      content: [{ type: 'input_text', text }]
+    });
   });
 
   return input;
@@ -207,7 +214,7 @@ class AssistantService {
     this.provider.ensureConfigured();
   }
 
-  async createSessionSeedMessage(query) {
+  async createSessionSeedMessage(query, options = {}) {
     const databaseName = query.databaseName || (await this.athenaService.resolveDatabaseName(null));
     let schemaSummary;
 
@@ -230,17 +237,15 @@ class AssistantService {
       currentQueryText: query.queryText || null,
       schema: schemaSummary
     };
+    if (typeof options.previousConversationSummary === 'string' && options.previousConversationSummary.trim() !== '') {
+      seedPayload.previousConversationSummary = options.previousConversationSummary.trim();
+    }
 
     return JSON.stringify(seedPayload, null, 2);
   }
 
-  async getOrCreateSession(query) {
-    let session = await this.assistantStore.getSessionByQueryIdAndProvider(query.id, this.providerName);
-    if (session) {
-      return { session, created: false };
-    }
-
-    session = await this.assistantStore.createSession({
+  async createSessionForQuery(query, options = {}) {
+    const session = await this.assistantStore.createSession({
       id: uuidv4(),
       queryId: query.id,
       mode: 'query_assistant',
@@ -248,7 +253,7 @@ class AssistantService {
       model: this.model
     });
 
-    const seedMessage = await this.createSessionSeedMessage(query);
+    const seedMessage = await this.createSessionSeedMessage(query, options);
     await this.assistantStore.createMessage({
       id: uuidv4(),
       sessionId: session.id,
@@ -257,7 +262,90 @@ class AssistantService {
       contentType: 'text'
     });
 
+    if (
+      typeof options.visibleSummaryMessage === 'string' &&
+      options.visibleSummaryMessage.trim() !== ''
+    ) {
+      await this.assistantStore.createMessage({
+        id: uuidv4(),
+        sessionId: session.id,
+        role: 'assistant',
+        content: options.visibleSummaryMessage.trim(),
+        contentType: 'text'
+      });
+    }
+
+    return session;
+  }
+
+  async getOrCreateSession(query) {
+    let session = await this.assistantStore.getSessionByQueryIdAndProvider(query.id, this.providerName);
+    if (session) {
+      return { session, created: false };
+    }
+
+    session = await this.createSessionForQuery(query);
+
     return { session, created: true };
+  }
+
+  async summarizeConversation(messages, query) {
+    this.ensureConfigured();
+
+    const transcript = messages
+      .filter((message) => message.role === 'user' || message.role === 'assistant' || message.role === 'tool')
+      .map((message) => `${String(message.role || 'unknown').toUpperCase()}:\n${String(message.content || '')}`)
+      .join('\n\n');
+
+    const trimmedTranscript = transcript.length > 16000 ? transcript.slice(-16000) : transcript;
+    const prompt = [
+      'Summarize this SQL assistant conversation so a new session can continue seamlessly.',
+      'Focus on:',
+      '- user goals and constraints',
+      '- useful schema/query findings',
+      '- failed approaches and why they failed',
+      '- current best SQL candidates and next recommended steps',
+      '',
+      `Query id: ${query.id}`,
+      `Selected database: ${query.databaseName || '(not set)'}`,
+      '',
+      'Conversation transcript:',
+      trimmedTranscript || '(empty)'
+    ].join('\n');
+
+    if (this.providerName === 'openai') {
+      const response = await this.provider.send({
+        input: [
+          {
+            role: 'user',
+            content: [{ type: 'input_text', text: prompt }]
+          }
+        ],
+        previousResponseId: null,
+        tools: []
+      });
+      const summary = String(response.assistantText || '').trim();
+      if (!summary) {
+        throw new Error('Provider returned empty summary while compacting session');
+      }
+      return summary;
+    }
+
+    const response = await this.provider.send({
+      system: 'You are a concise technical conversation summarizer.',
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: prompt }]
+        }
+      ],
+      tools: []
+    });
+    const summary = String(response.assistantText || '').trim();
+    if (!summary) {
+      throw new Error('Provider returned empty summary while compacting session');
+    }
+    return summary;
   }
 
   async executeTool(toolName, args, toolContext = {}) {
@@ -464,7 +552,7 @@ class AssistantService {
             content: [{ type: 'input_text', text: String(userPrompt || '').trim() }]
           }
         ]
-      : mapStoredMessagesToOpenAiInput(messages, userPrompt);
+      : mapStoredMessagesToOpenAiInput(messages);
 
     for (let round = 0; round < this.maxToolRounds; round += 1) {
       if (await this.shouldCancel(sessionId)) {
@@ -488,7 +576,7 @@ class AssistantService {
           });
           previousResponseId = null;
           await this.assistantStore.updateProviderConversationId(sessionId, null);
-          input = mapStoredMessagesToOpenAiInput(messages, userPrompt);
+          input = mapStoredMessagesToOpenAiInput(messages);
           providerResponse = await this.provider.send({
             input,
             previousResponseId,
@@ -801,7 +889,13 @@ class AssistantService {
         queryId,
         provider: this.providerName,
         sessionExists: false,
-        runStatus: 'IDLE'
+        runStatus: 'IDLE',
+        model: this.model,
+        usage: {
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0
+        }
       };
     }
 
@@ -810,11 +904,17 @@ class AssistantService {
       provider: this.providerName,
       sessionExists: true,
       sessionId: session.id,
+      model: session.model || this.model,
       runStatus: session.runStatus,
       runStartedAt: session.runStartedAt,
       runFinishedAt: session.runFinishedAt,
       cancelRequestedAt: session.cancelRequestedAt,
-      lastErrorMessage: session.lastErrorMessage
+      lastErrorMessage: session.lastErrorMessage,
+      usage: {
+        promptTokens: session.tokenUsagePrompt,
+        completionTokens: session.tokenUsageCompletion,
+        totalTokens: session.tokenUsageTotal
+      }
     };
   }
 
@@ -883,6 +983,57 @@ class AssistantService {
       sessionId: session.id,
       messages
     };
+  }
+
+  async compact(queryId, mode) {
+    return this.lockManager.runWithLock(`assistant:${queryId}`, async () => {
+      const query = await this.queryStore.getById(queryId);
+      if (!query) {
+        return { error: 'QUERY_NOT_FOUND' };
+      }
+
+      const compactMode = String(mode || 'empty').trim().toLowerCase();
+      if (compactMode !== 'empty' && compactMode !== 'summarize') {
+        return { error: 'INVALID_MODE' };
+      }
+
+      const activeSession = await this.assistantStore.getActiveSessionByQueryId(query.id);
+      if (activeSession) {
+        return { error: 'RUN_ACTIVE', session: activeSession };
+      }
+
+      const previousSession = await this.assistantStore.getSessionByQueryIdAndProvider(query.id, this.providerName);
+      let summaryText = null;
+      if (compactMode === 'summarize' && previousSession) {
+        const messages = await this.assistantStore.listMessagesBySessionId(previousSession.id);
+        summaryText = await this.summarizeConversation(messages, query);
+      }
+
+      const nextSession = await this.createSessionForQuery(query, {
+        previousConversationSummary: summaryText,
+        visibleSummaryMessage: summaryText
+          ? `Conversation compacted from prior session. Summary:\n\n${summaryText}`
+          : null
+      });
+      const current = await this.assistantStore.getSessionById(nextSession.id);
+
+      return {
+        queryId: query.id,
+        provider: this.providerName,
+        mode: compactMode,
+        previousSessionId: previousSession?.id || null,
+        sessionId: current.id,
+        runStatus: current.runStatus,
+        runStartedAt: current.runStartedAt,
+        runFinishedAt: current.runFinishedAt,
+        usage: {
+          promptTokens: current.tokenUsagePrompt,
+          completionTokens: current.tokenUsageCompletion,
+          totalTokens: current.tokenUsageTotal
+        },
+        summaryIncluded: Boolean(summaryText)
+      };
+    });
   }
 }
 

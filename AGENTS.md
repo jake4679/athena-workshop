@@ -21,6 +21,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - `POST /query/:id/assistant/send`: submit assistant prompt for a query and start an async assistant run.
 - `GET /query/:id/assistant/status`: return assistant run state metadata for a query.
 - `POST /query/:id/assistant/cancel`: request cancellation of active assistant run for a query.
+- `POST /query/:id/assistant/compact`: compact conversation into a new session (`mode: empty|summarize`).
 - `GET /query/:id/assistant/messages`: return persisted assistant conversation messages for a query.
 - `GET /health`: health check endpoint.
 
@@ -36,6 +37,8 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Only one assistant run can be active per query at a time; concurrent sends for the same query are rejected.
 - Assistant runs are asynchronous and polled via status endpoint.
 - Assistant cancellation is best-effort and should transition running sessions to cancelling/idle states.
+- Assistant status should include cumulative token usage for the current provider session.
+- Assistant compact should reject while a run is active; summarize compact should carry forward a summary into the new session.
 - Assistant provider calls (OpenAI/Anthropic) do not use a local backend timeout; runs complete when response returns or are cancelled/failed.
 - Assistant `run_read_query` tool safeguards:
   - read-only SQL verification via backend parser/tokenizer guard
@@ -107,6 +110,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Monaco editor uses schema-aware autocomplete (keywords/tables/columns) and debounced backend validation markers.
 - Frontend includes collapsible assistant panel (response display + prompt input) above query editor.
 - Frontend assistant panel includes send/cancel controls, run status polling, elapsed run timer, and per-query conversation rendering from backend messages.
+- Frontend assistant panel includes compact controls (`Compact`, `Compact + Summary`) and current-session token usage display.
 - Frontend assistant panel renders assistant responses as sanitized Markdown (with plain-text fallback when Markdown libraries are unavailable).
 - Frontend assistant panel shows optimistic user messages immediately on send and an animated typing indicator while assistant runs are active.
 - Assistant response bubbles include a `Use` action that copies selected assistant output into the SQL editor.
@@ -124,7 +128,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Tabular result rows support click-to-select highlighting in both Tabulator mode and basic HTML table fallback.
 - Results panel includes full-results download controls with selectable format (`CSV`, `Excel`, `Parquet`) wired to `/query/:id/results/download`.
 - `scripts/exercise.sh` validates base API behavior plus paginated results behavior, and supports SQL overrides via env vars (`QUERY1_SQL`, `QUERY2_SQL`, `PAGINATION_SQL`).
-- `scripts/exercise-assistant.sh` validates assistant send/status/messages/cancel behavior, logs request/response pairs to a file (`LOG_FILE`), and supports prompt/query overrides (`ASSISTANT_PROMPT`, `QUERY_SQL`; empty `QUERY_SQL` uses `SELECT 1` only for query creation).
+- `scripts/exercise-assistant.sh` validates assistant send/status/messages/cancel/compact behavior (including usage reporting/reset), logs request/response pairs to a file (`LOG_FILE`), and supports prompt/query overrides (`ASSISTANT_PROMPT`, `QUERY_SQL`; empty `QUERY_SQL` uses `SELECT 1` only for query creation).
 - App construction is factored into `src/app.js` (`buildApp`) so endpoint tests can inject mocked services.
 - Service orchestration is factored into `src/services/appServices.js` (`createServices`) so tests can reuse production service wiring.
 - Endpoint tests are split by endpoint into separate files (`tests/query.create.test.js`, `tests/query.cancel.test.js`).

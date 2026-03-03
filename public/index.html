@@ -746,10 +746,12 @@
                   placeholder="Ask the assistant to explain or fix syntax..."
                 ></textarea>
                 <div class="assistant-toolbar">
-                  <div id="assistantMeta" class="assistant-meta">Status: idle | Elapsed: 00:00</div>
+                  <div id="assistantMeta" class="assistant-meta">Status: idle | Elapsed: 00:00 | Tokens: 0 (in:0 out:0)</div>
                   <div class="assistant-actions">
                     <button id="sendAssistantBtn" class="btn-accent" type="button">Send</button>
                     <button id="cancelAssistantBtn" class="btn-light" type="button">Cancel</button>
+                    <button id="compactAssistantBtn" class="btn-light" type="button">Compact</button>
+                    <button id="compactSummaryAssistantBtn" class="btn-light" type="button">Compact + Summary</button>
                   </div>
                 </div>
               </div>
@@ -875,6 +877,11 @@
       let assistantServerMessages = [];
       let assistantPendingUserMessage = null;
       let assistantThinking = false;
+      let assistantUsage = {
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0
+      };
       let completionProviderRegistered = false;
       const VALIDATION_DEBOUNCE_MS = 650;
       const UI_STATE_STORAGE_KEY = 'athena_query_console_ui_state_v1';
@@ -913,6 +920,8 @@
       const assistantMetaEl = document.getElementById('assistantMeta');
       const sendAssistantBtn = document.getElementById('sendAssistantBtn');
       const cancelAssistantBtn = document.getElementById('cancelAssistantBtn');
+      const compactAssistantBtn = document.getElementById('compactAssistantBtn');
+      const compactSummaryAssistantBtn = document.getElementById('compactSummaryAssistantBtn');
       const schemaTreeEl = document.getElementById('schemaTree');
       const databaseSelectEl = document.getElementById('databaseSelect');
       const schemaFilterInputEl = document.getElementById('schemaFilterInput');
@@ -979,7 +988,10 @@
           const elapsed = Date.now() - assistantRunStartedAt.getTime();
           elapsedText = formatElapsed(elapsed);
         }
-        assistantMetaEl.textContent = `Status: ${statusText} | Elapsed: ${elapsedText}`;
+        const usageTotal = Number(assistantUsage.totalTokens || 0);
+        const usagePrompt = Number(assistantUsage.promptTokens || 0);
+        const usageCompletion = Number(assistantUsage.completionTokens || 0);
+        assistantMetaEl.textContent = `Status: ${statusText} | Elapsed: ${elapsedText} | Tokens: ${usageTotal} (in:${usagePrompt} out:${usageCompletion})`;
       }
 
       function startAssistantElapsedTimer(startedAtIso) {
@@ -1011,7 +1023,18 @@
         const running = assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING';
         sendAssistantBtn.disabled = running;
         cancelAssistantBtn.disabled = !running;
+        compactAssistantBtn.disabled = running;
+        compactSummaryAssistantBtn.disabled = running;
         renderAssistantThread();
+      }
+
+      function setAssistantUsage(usage) {
+        assistantUsage = {
+          promptTokens: Number(usage?.promptTokens || 0),
+          completionTokens: Number(usage?.completionTokens || 0),
+          totalTokens: Number(usage?.totalTokens || 0)
+        };
+        updateAssistantMeta();
       }
 
       function renderAssistantMessages(messages) {
@@ -1921,6 +1944,7 @@
         }
 
         const nextStatus = res.json.runStatus || 'IDLE';
+        setAssistantUsage(res.json.usage || null);
         setAssistantRunStatus(nextStatus, res.json.runStartedAt || null);
         if (nextStatus === 'FAILED' && res.json.lastErrorMessage) {
           renderStatus(`Assistant failed: ${res.json.lastErrorMessage}`, true);
@@ -1962,6 +1986,7 @@
           assistantPendingUserMessage = null;
           assistantThinking = false;
           assistantServerMessages = [];
+          setAssistantUsage(null);
           setAssistantRunStatus('IDLE', null);
           renderAssistantMessages([]);
           return;
@@ -2044,6 +2069,50 @@
           startAssistantStatusPolling(selectedQueryId);
         } catch (error) {
           renderStatus(`Assistant cancel error: ${error.message}`, true);
+        }
+      }
+
+      async function compactAssistantSession(mode) {
+        if (!selectedQueryId) {
+          renderStatus('Select a query to compact assistant session.', true);
+          return;
+        }
+
+        const normalizedMode = String(mode || 'empty').trim().toLowerCase();
+        if (normalizedMode !== 'empty' && normalizedMode !== 'summarize') {
+          renderStatus('Invalid compact mode requested.', true);
+          return;
+        }
+
+        compactAssistantBtn.disabled = true;
+        compactSummaryAssistantBtn.disabled = true;
+        try {
+          const res = await apiRequest(`/query/${selectedQueryId}/assistant/compact`, 'POST', {
+            mode: normalizedMode
+          });
+          if (!res.ok) {
+            renderStatus(`Assistant compact failed (${res.status}): ${res.json.message || 'unknown error'}`, true);
+            return;
+          }
+
+          setAssistantUsage(res.json.usage || null);
+          setAssistantRunStatus(res.json.runStatus || 'IDLE', res.json.runStartedAt || null);
+          assistantPendingUserMessage = null;
+          assistantThinking = false;
+          await fetchAssistantMessages(selectedQueryId);
+          renderStatus(
+            normalizedMode === 'summarize'
+              ? 'Assistant conversation compacted with summary into a new session.'
+              : 'Assistant conversation compacted into a new empty session.',
+            false
+          );
+        } catch (error) {
+          renderStatus(`Assistant compact error: ${error.message}`, true);
+        } finally {
+          if (!(assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING')) {
+            compactAssistantBtn.disabled = false;
+            compactSummaryAssistantBtn.disabled = false;
+          }
         }
       }
 
@@ -2381,6 +2450,18 @@
       cancelAssistantBtn.addEventListener('click', () => {
         cancelAssistantRun().catch((error) => {
           renderStatus(`Assistant cancel error: ${error.message}`, true);
+        });
+      });
+
+      compactAssistantBtn.addEventListener('click', () => {
+        compactAssistantSession('empty').catch((error) => {
+          renderStatus(`Assistant compact error: ${error.message}`, true);
+        });
+      });
+
+      compactSummaryAssistantBtn.addEventListener('click', () => {
+        compactAssistantSession('summarize').catch((error) => {
+          renderStatus(`Assistant compact error: ${error.message}`, true);
         });
       });
 

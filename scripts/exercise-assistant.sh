@@ -194,6 +194,20 @@ else
   fail "assistant response missing SQL-like SELECT"
 fi
 
+request GET "$BASE_URL/query/$QUERY_ID/assistant/status"
+assert_status 200 "assistant status after first run"
+assert_jq_eq '(.usage.totalTokens | type)' 'number' "assistant usage total tokens present"
+
+request POST "$BASE_URL/query/$QUERY_ID/assistant/compact" '{"mode":"summarize"}'
+assert_status 200 "assistant compact summarize accepted"
+assert_jq_eq '.mode' 'summarize' "assistant compact summarize mode echoed"
+assert_jq_eq '.summaryIncluded' 'true' "assistant compact summarize included summary"
+
+request POST "$BASE_URL/query/$QUERY_ID/assistant/compact" '{"mode":"empty"}'
+assert_status 200 "assistant compact empty accepted"
+assert_jq_eq '.mode' 'empty' "assistant compact empty mode echoed"
+assert_jq_eq '.usage.totalTokens' '0' "assistant compact reset token usage"
+
 SECOND_SEND=$(jq -nc --arg prompt "Give one shorter SQL alternative." '{prompt: $prompt}')
 request POST "$BASE_URL/query/$QUERY_ID/assistant/send" "$SECOND_SEND"
 assert_status 202 "assistant second run accepted"

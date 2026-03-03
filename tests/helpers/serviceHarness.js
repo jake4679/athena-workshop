@@ -116,7 +116,8 @@ function createServicesWithRealStack({ athenaSendImpl, resultsDir = './results/t
     send: async () => ({ error: 'NOT_USED' }),
     getStatus: async () => ({ error: 'NOT_USED' }),
     cancel: async () => ({ error: 'NOT_USED' }),
-    listMessages: async () => ({ error: 'NOT_USED' })
+    listMessages: async () => ({ error: 'NOT_USED' }),
+    compact: async () => ({ error: 'NOT_USED' })
   };
 
   const services = createServices({

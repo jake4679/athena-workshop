@@ -16,7 +16,8 @@ const {
   sendAssistantPromptHandler,
   getAssistantStatusHandler,
   cancelAssistantRunHandler,
-  getAssistantMessagesHandler
+  getAssistantMessagesHandler,
+  compactAssistantSessionHandler
 } = require('./queryHandlers');
 
 function authMiddleware(_req, _res, next) {
@@ -45,6 +46,7 @@ function buildRouter(context) {
   router.get('/query/:id/assistant/status', getAssistantStatusHandler(context));
   router.post('/query/:id/assistant/cancel', cancelAssistantRunHandler(context));
   router.get('/query/:id/assistant/messages', getAssistantMessagesHandler(context));
+  router.post('/query/:id/assistant/compact', compactAssistantSessionHandler(context));
 
   return router;
 }

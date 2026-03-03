@@ -851,6 +851,56 @@ function getAssistantMessagesHandler({ services }) {
   };
 }
 
+function compactAssistantSessionHandler({ services }) {
+  return async function compactAssistantSession(req, res) {
+    try {
+      const id = req.params.id;
+      const modeRaw = req.body?.mode;
+      const mode = modeRaw === undefined ? 'empty' : modeRaw;
+      if (typeof mode !== 'string' || mode.trim() === '') {
+        return res.status(400).json({
+          error: 'INVALID_REQUEST',
+          message: 'mode must be a non-empty string when provided'
+        });
+      }
+
+      const response = await services.compactAssistantSession(id, mode.trim());
+      if (response.error === 'QUERY_NOT_FOUND') {
+        return notFoundResponse(res, id);
+      }
+      if (response.error === 'INVALID_MODE') {
+        return res.status(400).json({
+          error: 'ASSISTANT_COMPACT_INVALID_MODE',
+          message: 'mode must be one of: empty, summarize'
+        });
+      }
+      if (response.error === 'RUN_ACTIVE') {
+        return res.status(409).json({
+          error: 'ASSISTANT_RUN_ACTIVE',
+          message: 'Assistant run already in progress for this query',
+          queryId: id,
+          sessionId: response.session?.id || null,
+          runStatus: response.session?.runStatus || 'RUNNING'
+        });
+      }
+
+      return res.status(200).json(response);
+    } catch (error) {
+      if (error.code === 'ASSISTANT_NOT_CONFIGURED') {
+        return res.status(503).json({
+          error: 'ASSISTANT_NOT_CONFIGURED',
+          message: 'Assistant API key is not configured for the configured provider'
+        });
+      }
+
+      return res.status(500).json({
+        error: 'ASSISTANT_COMPACT_FAILED',
+        message: 'Failed to compact assistant session'
+      });
+    }
+  };
+}
+
 module.exports = {
   createQueryHandler,
   updateQueryHandler,
@@ -868,5 +918,6 @@ module.exports = {
   sendAssistantPromptHandler,
   getAssistantStatusHandler,
   cancelAssistantRunHandler,
-  getAssistantMessagesHandler
+  getAssistantMessagesHandler,
+  compactAssistantSessionHandler
 };

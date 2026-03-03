@@ -67,7 +67,9 @@ Notes:
 - `POST /query/:id/assistant/send` body: `{ "prompt": "..." }` (starts assistant run; lazy-creates session on first send)
 - `GET /query/:id/assistant/status` (returns assistant run state for the query)
 - `POST /query/:id/assistant/cancel` (requests cancellation of active assistant run)
+- `POST /query/:id/assistant/compact` body: `{ "mode": "empty" | "summarize" }` (resets to a new assistant session; summarize mode carries forward a summary into the new session)
 - `GET /query/:id/assistant/messages` (returns persisted assistant conversation messages for the query)
+- Assistant status payload includes cumulative token usage for the current provider session (`usage.promptTokens`, `usage.completionTokens`, `usage.totalTokens`).
 - Assistant provider requests (OpenAI/Anthropic) do not use a local backend timeout; runs complete when model response returns or when cancelled/failed.
 - Assistant includes `run_read_query` tool for self-serve sampling with backend safeguards:
   - parser/tokenizer guard allows only SELECT-style read queries
@@ -81,8 +83,10 @@ Notes:
 - `GET /` serves a minimal HTML page with:
 - Collapsible assistant panel with response area, prompt input, run status, and elapsed timer
 - Assistant prompt send/cancel controls backed by `/query/:id/assistant/*` APIs
+- Assistant compact controls for session reset (`Compact`) and summarize-then-reset (`Compact + Summary`)
 - Assistant prompt submit via `Cmd+Enter` / `Ctrl+Enter` when prompt textarea is focused
 - Assistant run polling (`/assistant/status`) and conversation rendering (`/assistant/messages`)
+- Assistant metadata line includes run status, elapsed timer, and current-session token usage
 - Assistant responses are rendered as sanitized Markdown (with plain-text fallback if Markdown libraries fail to load)
 - Assistant panel shows optimistic user messages immediately on send and a live animated typing indicator while assistant run is active
 - Assistant response bubbles include a `Use` action to copy that response into the SQL editor
@@ -125,6 +129,7 @@ Environment overrides for assistant exercise:
 - `ASSISTANT_PROMPT` (default: `Give me a SQL query that gives me the current date time`)
 - `QUERY_SQL` (default: empty; script uses `SELECT 1` only for required query creation step)
 - `LOG_FILE` (default: `./results/exercise-assistant-<timestamp>.log`; includes request/response pairs)
+- Script validates send/status/messages/cancel plus compact (`summarize` and `empty`) behavior and usage reset on empty compact.
 
 ## Automated Tests
 - Run all tests:

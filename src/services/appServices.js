@@ -228,6 +228,10 @@ function createServices({ queryStore, assistantService, athenaService, lockManag
     return assistantService.listMessages(queryId);
   }
 
+  async function compactAssistantSession(queryId, mode) {
+    return assistantService.compact(queryId, mode);
+  }
+
   return {
     queryStore,
     assistantService,
@@ -243,6 +247,7 @@ function createServices({ queryStore, assistantService, athenaService, lockManag
     getAssistantStatus,
     cancelAssistantRun,
     listAssistantMessages,
+    compactAssistantSession,
     pollRunningQueries
   };
 }
