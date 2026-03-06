@@ -42,6 +42,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Assistant provider calls (OpenAI/Anthropic) do not use a local backend timeout; runs complete when response returns or are cancelled/failed.
 - Assistant `run_read_query` tool safeguards:
   - read-only SQL verification via backend parser/tokenizer guard
+  - `TRUNCATE(...)` numeric function usage is allowed for read queries; destructive `TRUNCATE TABLE`/statement usage remains blocked
   - hard row cap (`LIMIT 500`) enforced by backend query rewrite
   - max 5 tool executions per assistant run
   - optional result column cap (`maxColumns`, up to 50)
@@ -111,6 +112,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Frontend includes collapsible assistant panel (response display + prompt input) above query editor.
 - Frontend assistant panel includes send/cancel controls, run status polling, elapsed run timer, and per-query conversation rendering from backend messages.
 - Frontend assistant panel includes compact controls (`Compact`, `Compact + Summary`) and current-session token usage display.
+- Frontend assistant panel label is provider-aware: `Buddy` for OpenAI and `Copain` for Anthropic (Claude).
 - Frontend assistant panel renders assistant responses as sanitized Markdown (with plain-text fallback when Markdown libraries are unavailable).
 - Frontend assistant panel shows optimistic user messages immediately on send and an animated typing indicator while assistant runs are active.
 - Assistant response bubbles include a `Use` action that copies selected assistant output into the SQL editor.

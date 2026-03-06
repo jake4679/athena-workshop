@@ -32,6 +32,17 @@ test('validateReadQuery blocks multiple statements', () => {
   assert.match(result.reason, /multiple SQL statements/i);
 });
 
+test('validateReadQuery allows TRUNCATE function usage in SELECT', () => {
+  const result = validateReadQuery('SELECT TRUNCATE(price, 2) AS rounded_price FROM sample_table');
+  assert.equal(result.valid, true);
+});
+
+test('validateReadQuery blocks destructive TRUNCATE usage in SELECT-style context', () => {
+  const result = validateReadQuery('EXPLAIN TRUNCATE TABLE sample_table');
+  assert.equal(result.valid, false);
+  assert.match(result.reason, /TRUNCATE/i);
+});
+
 test('rewriteReadQueryWithHardLimit wraps query and enforces max row limit', () => {
   const result = rewriteReadQueryWithHardLimit('SELECT id FROM sample_table', 500);
   assert.equal(result.valid, true);

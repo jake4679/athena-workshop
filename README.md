@@ -73,6 +73,7 @@ Notes:
 - Assistant provider requests (OpenAI/Anthropic) do not use a local backend timeout; runs complete when model response returns or when cancelled/failed.
 - Assistant includes `run_read_query` tool for self-serve sampling with backend safeguards:
   - parser/tokenizer guard allows only SELECT-style read queries
+  - read guard allows `TRUNCATE(...)` numeric function usage, while blocking destructive `TRUNCATE TABLE`/statement usage
   - hard enforced outer `LIMIT 500`
   - max 5 `run_read_query` calls per assistant run
   - optional `maxColumns` (1-50) limits returned columns in tool output
@@ -82,6 +83,7 @@ Notes:
 ## Frontend
 - `GET /` serves a minimal HTML page with:
 - Collapsible assistant panel with response area, prompt input, run status, and elapsed timer
+- Assistant panel label is provider-aware: `Buddy` for OpenAI and `Copain` for Anthropic (Claude)
 - Assistant prompt send/cancel controls backed by `/query/:id/assistant/*` APIs
 - Assistant compact controls for session reset (`Compact`) and summarize-then-reset (`Compact + Summary`)
 - Assistant prompt submit via `Cmd+Enter` / `Ctrl+Enter` when prompt textarea is focused

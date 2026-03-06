@@ -188,6 +188,87 @@ function tokenizeTopLevel(sql) {
   return tokens;
 }
 
+function hasDangerousTruncateUsage(sql) {
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inBacktick = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let i = 0; i < sql.length; i += 1) {
+    const ch = sql[i];
+    const next = i + 1 < sql.length ? sql[i + 1] : '';
+
+    if (inLineComment) {
+      if (ch === '\n') {
+        inLineComment = false;
+      }
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (ch === '*' && next === '/') {
+        inBlockComment = false;
+        i += 1;
+      }
+      continue;
+    }
+
+    if (!inSingleQuote && !inDoubleQuote && !inBacktick) {
+      if (ch === '-' && next === '-') {
+        inLineComment = true;
+        i += 1;
+        continue;
+      }
+      if (ch === '/' && next === '*') {
+        inBlockComment = true;
+        i += 1;
+        continue;
+      }
+    }
+
+    if (!inDoubleQuote && !inBacktick && ch === '\'' && sql[i - 1] !== '\\') {
+      inSingleQuote = !inSingleQuote;
+      continue;
+    }
+    if (!inSingleQuote && !inBacktick && ch === '"' && sql[i - 1] !== '\\') {
+      inDoubleQuote = !inDoubleQuote;
+      continue;
+    }
+    if (!inSingleQuote && !inDoubleQuote && ch === '`') {
+      inBacktick = !inBacktick;
+      continue;
+    }
+
+    if (inSingleQuote || inDoubleQuote || inBacktick) {
+      continue;
+    }
+
+    const isWordStart = /[A-Za-z_]/.test(ch) && (i === 0 || !/[A-Za-z0-9_]/.test(sql[i - 1]));
+    if (!isWordStart) {
+      continue;
+    }
+
+    let end = i + 1;
+    while (end < sql.length && /[A-Za-z0-9_]/.test(sql[end])) {
+      end += 1;
+    }
+    const word = sql.slice(i, end).toUpperCase();
+    if (word === 'TRUNCATE') {
+      let lookahead = end;
+      while (lookahead < sql.length && /\s/.test(sql[lookahead])) {
+        lookahead += 1;
+      }
+      if (sql[lookahead] !== '(') {
+        return true;
+      }
+    }
+    i = end - 1;
+  }
+
+  return false;
+}
+
 function validateReadQuery(sqlText) {
   const normalized = stripTrailingSemicolons(sqlText);
   if (!normalized) {
@@ -210,12 +291,23 @@ function validateReadQuery(sqlText) {
   }
 
   for (const token of tokens) {
+    if (token === 'TRUNCATE') {
+      // Allow TRUNCATE(...) numeric function usage in SELECT-style queries.
+      continue;
+    }
     if (FORBIDDEN_KEYWORDS.has(token)) {
       return {
         valid: false,
         reason: `disallowed SQL keyword detected: ${token}`
       };
     }
+  }
+
+  if (hasDangerousTruncateUsage(normalized)) {
+    return {
+      valid: false,
+      reason: 'disallowed SQL keyword detected: TRUNCATE'
+    };
   }
 
   if (first === 'EXPLAIN') {

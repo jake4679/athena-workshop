@@ -104,9 +104,11 @@ function mapStoredMessagesToOpenAiInput(messages) {
     if (!text) {
       return;
     }
+    const role = message.role === 'assistant' ? 'assistant' : 'user';
+    const contentType = role === 'assistant' ? 'output_text' : 'input_text';
     input.push({
-      role: message.role,
-      content: [{ type: 'input_text', text }]
+      role,
+      content: [{ type: contentType, text }]
     });
   });
 

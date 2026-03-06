@@ -651,6 +651,14 @@
         background: #fff59d;
       }
 
+      .tabulator .tabulator-row.results-tabulator-row-selected {
+        background: #fff59d;
+      }
+
+      .tabulator .tabulator-row.results-tabulator-row-selected .tabulator-cell {
+        background: #fff59d !important;
+      }
+
       .results-basic-table {
         width: 100%;
         border-collapse: collapse;
@@ -735,15 +743,15 @@
           <section id="assistantCard" class="card assistant-card">
             <div class="section">
               <div class="panel-header">
-                <h2 style="margin: 0; font-size: 1rem">Assistant</h2>
+                <h2 id="assistantTitle" style="margin: 0; font-size: 1rem">Buddy</h2>
                 <button id="toggleAssistantBtn" class="btn-light icon-toggle" type="button">-</button>
               </div>
               <div class="assistant-body">
-                <div id="assistantResponse" class="assistant-response">Assistant responses will appear here.</div>
+                <div id="assistantResponse" class="assistant-response">Buddy responses will appear here.</div>
                 <textarea
                   id="assistantPromptInput"
                   class="assistant-prompt"
-                  placeholder="Ask the assistant to explain or fix syntax..."
+                  placeholder="Ask Buddy to explain or fix syntax..."
                 ></textarea>
                 <div class="assistant-toolbar">
                   <div id="assistantMeta" class="assistant-meta">Status: idle | Elapsed: 00:00 | Tokens: 0 (in:0 out:0)</div>
@@ -859,6 +867,7 @@
       let queryListTimer = null;
       let resultsTable = null;
       let selectedBasicTableRow = null;
+      let selectedTabulatorRowEl = null;
       let selectedQueryId = null;
       let schemaCollapsed = false;
       let queryListCollapsed = false;
@@ -877,11 +886,13 @@
       let assistantServerMessages = [];
       let assistantPendingUserMessage = null;
       let assistantThinking = false;
+      let assistantProviderName = 'openai';
       let assistantUsage = {
         promptTokens: 0,
         completionTokens: 0,
         totalTokens: 0
       };
+      let tabularInteractionListenerAttached = false;
       let completionProviderRegistered = false;
       const VALIDATION_DEBOUNCE_MS = 650;
       const UI_STATE_STORAGE_KEY = 'athena_query_console_ui_state_v1';
@@ -914,6 +925,7 @@
       const deleteQueryBtn = document.getElementById('deleteQueryBtn');
       const toggleQueryListBtn = document.getElementById('toggleQueryListBtn');
       const assistantCardEl = document.getElementById('assistantCard');
+      const assistantTitleEl = document.getElementById('assistantTitle');
       const toggleAssistantBtn = document.getElementById('toggleAssistantBtn');
       const assistantResponseEl = document.getElementById('assistantResponse');
       const assistantPromptInputEl = document.getElementById('assistantPromptInput');
@@ -930,6 +942,67 @@
 
       function isSubmitShortcut(event) {
         return event.key === 'Enter' && (event.ctrlKey || event.metaKey);
+      }
+
+      function getBuddyLabel() {
+        return assistantProviderName === 'anthropic' ? 'Copain' : 'Buddy';
+      }
+
+      function setAssistantProvider(provider) {
+        const normalized = String(provider || '').trim().toLowerCase();
+        assistantProviderName = normalized || 'openai';
+        updateAssistantLabels();
+      }
+
+      function updateAssistantLabels() {
+        const label = getBuddyLabel();
+        assistantTitleEl.textContent = label;
+        assistantPromptInputEl.placeholder = `Ask ${label} to explain or fix syntax...`;
+      }
+
+      function ensureTabularInteractionListener() {
+        if (tabularInteractionListenerAttached) {
+          return;
+        }
+        tabularViewEl.addEventListener('click', async (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) {
+            return;
+          }
+
+          const cellEl = target.closest('.tabulator-cell');
+          if (!cellEl) {
+            return;
+          }
+
+          try {
+            const copied = await copyTextToClipboard(cellEl.textContent || '');
+            if (copied) {
+              renderStatus('Copied cell value to clipboard.', false);
+            } else {
+              renderStatus('Could not auto-copy cell value in this browser context.', true);
+            }
+          } catch (error) {
+            renderStatus('Failed to copy cell value to clipboard.', true);
+          }
+
+          const rowEl = cellEl.closest('.tabulator-row');
+          if (!rowEl) {
+            return;
+          }
+
+          if (selectedTabulatorRowEl && selectedTabulatorRowEl !== rowEl) {
+            selectedTabulatorRowEl.classList.remove('results-tabulator-row-selected');
+            selectedTabulatorRowEl.style.backgroundColor = '';
+            selectedTabulatorRowEl.querySelectorAll('.tabulator-cell').forEach((prevCellEl) => {
+              prevCellEl.style.backgroundColor = '';
+            });
+          }
+
+          applyTabulatorSelectionHighlight(rowEl);
+          selectedTabulatorRowEl = rowEl;
+        });
+        tabularInteractionListenerAttached = true;
       }
 
       function getEditorValue() {
@@ -1076,7 +1149,7 @@
         assistantVisibleMessages = [];
         const visible = buildAssistantRenderableMessages();
         if (visible.length === 0 && !assistantThinking) {
-          assistantResponseEl.innerHTML = '<div class="assistant-empty">Assistant responses will appear here.</div>';
+          assistantResponseEl.innerHTML = `<div class="assistant-empty">${escapeHtml(getBuddyLabel())} responses will appear here.</div>`;
           return;
         }
 
@@ -1123,6 +1196,7 @@
           resultsTable = null;
         }
         selectedBasicTableRow = null;
+        selectedTabulatorRowEl = null;
         tabularViewEl.innerHTML = '';
         tabularViewEl.style.display = 'none';
         resultsEl.textContent = JSON.stringify(data, null, 2);
@@ -1162,6 +1236,52 @@
         return window.DOMPurify.sanitize(parsed);
       }
 
+      async function copyTextToClipboard(value) {
+        const text = value === null || value === undefined ? '' : String(value);
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          try {
+            await navigator.clipboard.writeText(text);
+            return true;
+          } catch (_error) {
+            // fall through to legacy copy path
+          }
+        }
+
+        const temp = document.createElement('textarea');
+        temp.value = text;
+        temp.setAttribute('readonly', '');
+        temp.style.position = 'absolute';
+        temp.style.left = '-9999px';
+        document.body.appendChild(temp);
+        temp.select();
+        const copied = document.execCommand('copy');
+        temp.remove();
+        if (copied) {
+          return true;
+        }
+
+        return false;
+      }
+
+      function clearTabulatorSelectionHighlight() {
+        const highlightedRows = tabularViewEl.querySelectorAll('.tabulator-row.results-tabulator-row-selected');
+        highlightedRows.forEach((el) => {
+          el.classList.remove('results-tabulator-row-selected');
+          el.style.backgroundColor = '';
+          el.querySelectorAll('.tabulator-cell').forEach((cellEl) => {
+            cellEl.style.backgroundColor = '';
+          });
+        });
+      }
+
+      function applyTabulatorSelectionHighlight(rowEl) {
+        rowEl.classList.add('results-tabulator-row-selected');
+        rowEl.style.backgroundColor = '#fff59d';
+        rowEl.querySelectorAll('.tabulator-cell').forEach((cellEl) => {
+          cellEl.style.backgroundColor = '#fff59d';
+        });
+      }
+
       function parseDownloadFileName(contentDisposition, fallbackName) {
         if (typeof contentDisposition !== 'string' || !contentDisposition) {
           return fallbackName;
@@ -1183,6 +1303,7 @@
 
       function renderBasicTable(columns, rows) {
         selectedBasicTableRow = null;
+        selectedTabulatorRowEl = null;
         const safeRows = Array.isArray(rows) ? rows : [];
         const header = columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('');
         const body = safeRows
@@ -1204,10 +1325,23 @@
 
         const tbody = tabularViewEl.querySelector('tbody');
         if (tbody) {
-          tbody.addEventListener('click', (event) => {
+          tbody.addEventListener('click', async (event) => {
             const target = event.target;
             if (!(target instanceof HTMLElement)) {
               return;
+            }
+            const cell = target.closest('td');
+            if (cell) {
+              try {
+                const copied = await copyTextToClipboard(cell.textContent || '');
+                if (copied) {
+                  renderStatus('Copied cell value to clipboard.', false);
+                } else {
+                  renderStatus('Could not auto-copy cell value in this browser context.', true);
+                }
+              } catch (error) {
+                renderStatus('Failed to copy cell value to clipboard.', true);
+              }
             }
             const row = target.closest('tr');
             if (!row) {
@@ -1217,8 +1351,6 @@
               selectedBasicTableRow.classList.remove('results-basic-row-selected');
             }
             if (selectedBasicTableRow === row) {
-              row.classList.remove('results-basic-row-selected');
-              selectedBasicTableRow = null;
               return;
             }
             row.classList.add('results-basic-row-selected');
@@ -1286,6 +1418,8 @@
           resultsTable.destroy();
           resultsTable = null;
         }
+        selectedTabulatorRowEl = null;
+        ensureTabularInteractionListener();
 
         tabularViewEl.innerHTML = '';
         tabularViewEl.style.display = 'block';
@@ -1337,7 +1471,6 @@
             layout: 'fitData',
             maxHeight: '420px',
             columns: tableColumns,
-            selectableRows: 1,
             pagination: true,
             paginationMode: 'remote',
             paginationInitialPage: 1,
@@ -1399,15 +1532,10 @@
                 data: []
               };
             },
-            rowClick: (_e, row) => {
-              if (row.isSelected()) {
-                row.deselect();
-                return;
-              }
-              row.select();
+            tableBuilt: () => {
+              resultsTable.setPage(1);
             }
           });
-          resultsTable.setPage(1);
         } catch (error) {
           renderStatus(`Tabulator initialization failed: ${error.message}`, true);
           resultsDebugEl.textContent = `Debug: Tabulator init failed | error=${error.message}`;
@@ -1922,6 +2050,7 @@
           renderAssistantMessages([]);
           return;
         }
+        setAssistantProvider(res.json.provider || assistantProviderName);
         renderAssistantMessages(Array.isArray(res.json.messages) ? res.json.messages : []);
       }
 
@@ -1939,15 +2068,16 @@
         const shouldRefreshMessagesOnIdle = options.refreshMessagesOnIdle !== false;
         const res = await apiRequest(`/query/${queryId}/assistant/status`, 'GET');
         if (!res.ok) {
-          renderStatus(`Assistant status failed (${res.status})`, true);
+          renderStatus(`${getBuddyLabel()} status failed (${res.status})`, true);
           return;
         }
 
+        setAssistantProvider(res.json.provider || assistantProviderName);
         const nextStatus = res.json.runStatus || 'IDLE';
         setAssistantUsage(res.json.usage || null);
         setAssistantRunStatus(nextStatus, res.json.runStartedAt || null);
         if (nextStatus === 'FAILED' && res.json.lastErrorMessage) {
-          renderStatus(`Assistant failed: ${res.json.lastErrorMessage}`, true);
+          renderStatus(`${getBuddyLabel()} failed: ${res.json.lastErrorMessage}`, true);
         }
 
         if (nextStatus === 'RUNNING' || nextStatus === 'CANCELLING') {
@@ -1964,7 +2094,7 @@
         clearAssistantStatusPolling();
         assistantPollQueryId = queryId;
         pollAssistantStatus(queryId).catch((error) => {
-          renderStatus(`Assistant polling error: ${error.message}`, true);
+          renderStatus(`${getBuddyLabel()} polling error: ${error.message}`, true);
         });
 
         assistantStatusTimer = setInterval(() => {
@@ -1973,7 +2103,7 @@
             return;
           }
           pollAssistantStatus(assistantPollQueryId).catch((error) => {
-            renderStatus(`Assistant polling error: ${error.message}`, true);
+            renderStatus(`${getBuddyLabel()} polling error: ${error.message}`, true);
           });
         }, 2000);
       }
@@ -2001,13 +2131,13 @@
 
       async function sendAssistantPrompt() {
         if (!selectedQueryId) {
-          renderStatus('Select or create a query before messaging assistant.', true);
+          renderStatus(`Select or create a query before messaging ${getBuddyLabel()}.`, true);
           return;
         }
 
         const prompt = (assistantPromptInputEl.value || '').trim();
         if (!prompt) {
-          renderStatus('Assistant prompt is required.', true);
+          renderStatus(`${getBuddyLabel()} prompt is required.`, true);
           return;
         }
 
@@ -2019,8 +2149,9 @@
         try {
           const res = await apiRequest(`/query/${selectedQueryId}/assistant/send`, 'POST', { prompt });
           if (res.ok) {
+            setAssistantProvider(res.json.provider || assistantProviderName);
             setAssistantRunStatus(res.json.runStatus || 'RUNNING', res.json.runStartedAt || null);
-            renderStatus('Assistant prompt submitted.', false);
+            renderStatus(`${getBuddyLabel()} prompt submitted.`, false);
             startAssistantStatusPolling(selectedQueryId);
             return;
           }
@@ -2029,7 +2160,7 @@
             assistantPendingUserMessage = null;
             assistantPromptInputEl.value = prompt;
             setAssistantRunStatus(res.json.runStatus || 'RUNNING', assistantRunStartedAt ? assistantRunStartedAt.toISOString() : null);
-            renderStatus('Assistant run already in progress.', true);
+            renderStatus(`${getBuddyLabel()} run already in progress.`, true);
             startAssistantStatusPolling(selectedQueryId);
             return;
           }
@@ -2038,13 +2169,13 @@
           assistantThinking = false;
           assistantPromptInputEl.value = prompt;
           renderAssistantThread();
-          renderStatus(`Assistant send failed (${res.status}): ${res.json.message || 'unknown error'}`, true);
+          renderStatus(`${getBuddyLabel()} send failed (${res.status}): ${res.json.message || 'unknown error'}`, true);
         } catch (error) {
           assistantPendingUserMessage = null;
           assistantThinking = false;
           assistantPromptInputEl.value = prompt;
           renderAssistantThread();
-          renderStatus(`Assistant send error: ${error.message}`, true);
+          renderStatus(`${getBuddyLabel()} send error: ${error.message}`, true);
         } finally {
           if (!(assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING')) {
             sendAssistantBtn.disabled = false;
@@ -2054,27 +2185,28 @@
 
       async function cancelAssistantRun() {
         if (!selectedQueryId) {
-          renderStatus('Select a query to cancel assistant run.', true);
+          renderStatus(`Select a query to cancel ${getBuddyLabel()} run.`, true);
           return;
         }
 
         try {
           const res = await apiRequest(`/query/${selectedQueryId}/assistant/cancel`, 'POST', {});
           if (!res.ok) {
-            renderStatus(`Assistant cancel failed (${res.status}): ${res.json.message || 'unknown error'}`, true);
+            renderStatus(`${getBuddyLabel()} cancel failed (${res.status}): ${res.json.message || 'unknown error'}`, true);
             return;
           }
+          setAssistantProvider(res.json.provider || assistantProviderName);
           setAssistantRunStatus(res.json.runStatus || 'CANCELLING', assistantRunStartedAt ? assistantRunStartedAt.toISOString() : null);
-          renderStatus('Assistant cancellation requested.', false);
+          renderStatus(`${getBuddyLabel()} cancellation requested.`, false);
           startAssistantStatusPolling(selectedQueryId);
         } catch (error) {
-          renderStatus(`Assistant cancel error: ${error.message}`, true);
+          renderStatus(`${getBuddyLabel()} cancel error: ${error.message}`, true);
         }
       }
 
       async function compactAssistantSession(mode) {
         if (!selectedQueryId) {
-          renderStatus('Select a query to compact assistant session.', true);
+          renderStatus(`Select a query to compact ${getBuddyLabel()} session.`, true);
           return;
         }
 
@@ -2091,10 +2223,11 @@
             mode: normalizedMode
           });
           if (!res.ok) {
-            renderStatus(`Assistant compact failed (${res.status}): ${res.json.message || 'unknown error'}`, true);
+            renderStatus(`${getBuddyLabel()} compact failed (${res.status}): ${res.json.message || 'unknown error'}`, true);
             return;
           }
 
+          setAssistantProvider(res.json.provider || assistantProviderName);
           setAssistantUsage(res.json.usage || null);
           setAssistantRunStatus(res.json.runStatus || 'IDLE', res.json.runStartedAt || null);
           assistantPendingUserMessage = null;
@@ -2102,12 +2235,12 @@
           await fetchAssistantMessages(selectedQueryId);
           renderStatus(
             normalizedMode === 'summarize'
-              ? 'Assistant conversation compacted with summary into a new session.'
-              : 'Assistant conversation compacted into a new empty session.',
+              ? `${getBuddyLabel()} conversation compacted with summary into a new session.`
+              : `${getBuddyLabel()} conversation compacted into a new empty session.`,
             false
           );
         } catch (error) {
-          renderStatus(`Assistant compact error: ${error.message}`, true);
+          renderStatus(`${getBuddyLabel()} compact error: ${error.message}`, true);
         } finally {
           if (!(assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING')) {
             compactAssistantBtn.disabled = false;
@@ -2449,19 +2582,19 @@
 
       cancelAssistantBtn.addEventListener('click', () => {
         cancelAssistantRun().catch((error) => {
-          renderStatus(`Assistant cancel error: ${error.message}`, true);
+          renderStatus(`${getBuddyLabel()} cancel error: ${error.message}`, true);
         });
       });
 
       compactAssistantBtn.addEventListener('click', () => {
         compactAssistantSession('empty').catch((error) => {
-          renderStatus(`Assistant compact error: ${error.message}`, true);
+          renderStatus(`${getBuddyLabel()} compact error: ${error.message}`, true);
         });
       });
 
       compactSummaryAssistantBtn.addEventListener('click', () => {
         compactAssistantSession('summarize').catch((error) => {
-          renderStatus(`Assistant compact error: ${error.message}`, true);
+          renderStatus(`${getBuddyLabel()} compact error: ${error.message}`, true);
         });
       });
 
@@ -2514,7 +2647,7 @@
         }
         event.preventDefault();
         sendAssistantPrompt().catch((error) => {
-          renderStatus(`Assistant send error: ${error.message}`, true);
+          renderStatus(`${getBuddyLabel()} send error: ${error.message}`, true);
         });
       });
 
@@ -2545,7 +2678,7 @@
         } else if (editor) {
           editor.focus();
         }
-        renderStatus('Copied assistant response into query editor.', false);
+        renderStatus(`Copied ${getBuddyLabel()} response into query editor.`, false);
       });
 
       window.addEventListener('beforeunload', () => {
@@ -2601,6 +2734,7 @@
           setSchemaCollapsed(schemaCollapsed);
           setQueryListCollapsed(queryListCollapsed);
           setAssistantCollapsed(assistantCollapsed);
+          updateAssistantLabels();
           setAssistantRunStatus('IDLE', null);
           setupMonacoEnhancements();
           editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
@@ -2627,6 +2761,7 @@
           setSchemaCollapsed(schemaCollapsed);
           setQueryListCollapsed(queryListCollapsed);
           setAssistantCollapsed(assistantCollapsed);
+          updateAssistantLabels();
           setAssistantRunStatus('IDLE', null);
           initializeAppState()
             .then(async () => {
