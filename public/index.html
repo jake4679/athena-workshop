@@ -1682,6 +1682,24 @@
         resultsDebugEl.textContent = 'Debug: rendering JSON mode';
       }
 
+      function renderQueryTerminalState(query) {
+        const state = query?.status || 'UNKNOWN';
+        const errorMessage = query?.errorMessage || null;
+        const payload = {
+          message:
+            state === 'FAILED'
+              ? errorMessage || 'Query failed in Athena.'
+              : `No results available for query in state ${state}.`,
+          status: state
+        };
+
+        if (errorMessage) {
+          payload.errorMessage = errorMessage;
+        }
+
+        renderJson(payload);
+      }
+
       function setMetaFields(meta) {
         metaNameEl.value = meta.name || '';
         metaNameEl.dataset.lastSavedValue = meta.name || '';
@@ -2793,8 +2811,12 @@
         }
 
         clearPolling();
-        renderStatus(`Loaded query ${id} with state ${query.status}.`, query.status !== 'CANCELLED');
-        renderJson({ message: `No results available for query in state ${query.status}.`, status: query.status });
+        if (query.status === 'FAILED' && query.errorMessage) {
+          renderStatus(`Loaded query ${id} failure: ${query.errorMessage}`, true);
+        } else {
+          renderStatus(`Loaded query ${id} with state ${query.status}.`, query.status !== 'CANCELLED');
+        }
+        renderQueryTerminalState(query);
       }
 
       async function cancelSelectedQuery() {
@@ -2928,7 +2950,12 @@
           return;
         }
 
-        renderStatus(`Query ${id} ended in state: ${state}`, state !== 'CANCELLED');
+        if (state === 'FAILED' && res.json.errorMessage) {
+          renderStatus(`Query ${id} failed: ${res.json.errorMessage}`, true);
+        } else {
+          renderStatus(`Query ${id} ended in state: ${state}`, state !== 'CANCELLED');
+        }
+        renderQueryTerminalState(res.json);
       }
 
       function startPolling(id) {

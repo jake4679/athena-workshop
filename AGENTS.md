@@ -138,6 +138,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Frontend includes editable textarea fallback if Monaco CDN loading fails.
 - Frontend includes selected-query cancel control wired to `POST /query/:id/cancel`.
 - Results panel now separates query metadata fields from result payload rendering.
+- Failed queries display Athena failure details (`StateChangeReason`) in the results panel and status messaging.
 - If Athena response includes `columns`, rows are rendered using Tabulator with remote pagination; otherwise JSON is shown.
 - Tabulator expands to fill the available results-pane width for narrower result sets while remaining horizontally scrollable for wider ones.
 - Tabulator renders HTTP/HTTPS cell values as clickable links.

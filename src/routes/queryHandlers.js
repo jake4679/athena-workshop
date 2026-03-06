@@ -436,7 +436,18 @@ function getQueryResultsHandler({ services }) {
           error: 'QUERY_CANCELLED',
           message: 'Query has been cancelled',
           id: query.id,
-          status: query.status
+          status: query.status,
+          errorMessage: query.errorMessage || null
+        });
+      }
+
+      if (query.status === 'FAILED') {
+        return res.status(409).json({
+          error: 'QUERY_FAILED',
+          message: query.errorMessage || 'Query failed in Athena',
+          id: query.id,
+          status: query.status,
+          errorMessage: query.errorMessage || null
         });
       }
 
@@ -445,7 +456,8 @@ function getQueryResultsHandler({ services }) {
           error: 'RESULTS_NOT_AVAILABLE',
           message: 'No results available for this query',
           id: query.id,
-          status: query.status
+          status: query.status,
+          errorMessage: query.errorMessage || null
         });
       }
 
@@ -582,7 +594,18 @@ function downloadQueryResultsHandler({ services, logger }) {
           error: 'QUERY_CANCELLED',
           message: 'Query has been cancelled',
           id: query.id,
-          status: query.status
+          status: query.status,
+          errorMessage: query.errorMessage || null
+        });
+      }
+
+      if (query.status === 'FAILED') {
+        return res.status(409).json({
+          error: 'QUERY_FAILED',
+          message: query.errorMessage || 'Query failed in Athena',
+          id: query.id,
+          status: query.status,
+          errorMessage: query.errorMessage || null
         });
       }
 
@@ -591,7 +614,8 @@ function downloadQueryResultsHandler({ services, logger }) {
           error: 'RESULTS_NOT_AVAILABLE',
           message: 'No results available for this query',
           id: query.id,
-          status: query.status
+          status: query.status,
+          errorMessage: query.errorMessage || null
         });
       }
 

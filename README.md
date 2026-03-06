@@ -220,6 +220,7 @@ SELECT * FROM queries LIMIT 10;
 - Query metadata panel
 - Results metadata cards render labels and values inline on one row when space allows
 - Results metadata values, including the editable `Name` input, are right-aligned
+- Failed queries surface Athena `StateChangeReason` details in the results pane and status messaging
 - Tabulator table for tabular results with remote pagination
 - Tabulator fills the available results-pane width for narrower result sets while remaining horizontally scrollable for wider ones
 - HTTP/HTTPS values in Tabulator cells render as clickable links
