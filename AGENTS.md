@@ -112,6 +112,13 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Assistant tool-loop ceiling is configurable via `assistant.maxToolRounds` (default `1000`), with cancellation expected via assistant cancel endpoint/UI when needed.
 - Assistant tools include `run_read_query` for bounded read sampling (parser-guarded SELECT-only execution, max 500 rows, max 5 calls per run, capped columns, audit logging).
 - Static frontend served from `/` with Monaco SQL editor, SQL format action, submit, polling, and results view.
+- Frontend uses a refreshed glass-panel layout with responsive cards, higher-contrast controls, and persisted light/dark theme switching.
+- General action buttons use a compact size, while sidebar collapse toggles remain larger.
+- Frontend shell spans the full browser width with narrow outer gutters, and the SQL editor card is collapsible like the other major panels.
+- Collapsed sidebars retain their full panel height and only compress horizontally.
+- Frontend card headers render title and descriptive subtitle inline on one row when space allows, preserving the existing type contrast.
+- Frontend card headers align title left and description right when space allows.
+- Sidebar headers keep the collapse button aligned with the title row, while the description sits below and remains left-aligned.
 - Monaco editor uses schema-aware autocomplete (keywords/tables/columns) and debounced backend validation markers.
 - Frontend includes collapsible assistant panel (response display + prompt input) above query editor.
 - Frontend assistant panel includes send/cancel controls, run status polling, elapsed run timer, and per-query conversation rendering from backend messages.
@@ -123,12 +130,16 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Frontend includes right-side query list populated from `/query`; selecting an item loads SQL and associated state/results.
 - Right-side query list includes delete control for selected query and clears UI state after deletion.
 - Results metadata panel includes `name` alongside Query ID/Status/timestamps.
+- Results metadata cards render labels and values inline on one row when space allows.
+- Results metadata values, including the editable `name` input, are right-aligned.
 - Query `name` is editable in the metadata panel and is persisted on field blur via `PUT /query/:identifier`.
 - Frontend includes left-side Athena schema tree loaded via `/database/:database/tables` and `/database/:database/:table/schema`.
 - Frontend prefetches table schemas in the background after table list load.
 - Frontend includes editable textarea fallback if Monaco CDN loading fails.
+- Frontend includes selected-query cancel control wired to `POST /query/:id/cancel`.
 - Results panel now separates query metadata fields from result payload rendering.
 - If Athena response includes `columns`, rows are rendered using Tabulator with remote pagination; otherwise JSON is shown.
+- Tabulator expands to fill the available results-pane width for narrower result sets while remaining horizontally scrollable for wider ones.
 - Tabulator renders HTTP/HTTPS cell values as clickable links.
 - If Tabulator is unavailable or fails to initialize, frontend falls back to a basic HTML table rendering.
 - Tabular result rows support click-to-select highlighting in both Tabulator mode and basic HTML table fallback.

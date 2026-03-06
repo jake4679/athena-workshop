@@ -190,6 +190,15 @@ SELECT * FROM queries LIMIT 10;
 
 ## Frontend
 - `GET /` serves a minimal HTML page with:
+- Refreshed glass-panel UI with responsive card layout and higher-contrast controls
+- General action buttons use a compact size, while sidebar collapse toggles remain larger
+- Main shell stretches to the full browser width with narrow outer gutters
+- Light/dark theme toggle persisted in browser local storage and applied to Monaco when available
+- Section card headers render title and descriptive subtitle inline on one row when space allows
+- Section card headers align title left and description right on the same row when space allows
+- Sidebar headers keep the collapse button aligned with the title row, with the description shown below and left-aligned
+- Collapsible SQL editor card in addition to schema, assistant, and query list panels
+- Collapsed sidebars retain their full panel height and only compress horizontally
 - Collapsible assistant panel with response area, prompt input, run status, and elapsed timer
 - Assistant panel label is provider-aware: `Buddy` for OpenAI and `Copain` for Anthropic (Claude)
 - Assistant prompt send/cancel controls backed by `/query/:id/assistant/*` APIs
@@ -206,9 +215,13 @@ SELECT * FROM queries LIMIT 10;
 - Debounced backend syntax validation with inline Monaco error markers
 - SQL formatting button
 - Query submit action
+- Query cancel action for the selected query
 - Live status polling
 - Query metadata panel
+- Results metadata cards render labels and values inline on one row when space allows
+- Results metadata values, including the editable `Name` input, are right-aligned
 - Tabulator table for tabular results with remote pagination
+- Tabulator fills the available results-pane width for narrower result sets while remaining horizontally scrollable for wider ones
 - HTTP/HTTPS values in Tabulator cells render as clickable links
 - Tabular result rows support click-to-select highlighting (Tabulator and fallback HTML table)
 - Results panel includes full-results download controls with format selection (CSV, Excel, Parquet)

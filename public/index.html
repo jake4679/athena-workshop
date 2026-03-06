@@ -13,117 +13,471 @@
     />
     <style>
       :root {
-        --bg-1: #eef6ff;
-        --bg-2: #f9f7f2;
-        --panel: rgba(255, 255, 255, 0.86);
-        --ink: #1f2933;
-        --muted: #5f6b76;
-        --accent: #0f766e;
-        --accent-2: #0ea5e9;
-        --danger: #b42318;
-        --ok: #027a48;
-        --border: rgba(15, 23, 42, 0.14);
+        color-scheme: light;
+        --bg: #f3f7fb;
+        --bg-elevated: rgba(255, 255, 255, 0.72);
+        --bg-panel: rgba(255, 255, 255, 0.82);
+        --bg-panel-strong: rgba(255, 255, 255, 0.94);
+        --bg-muted: rgba(230, 238, 248, 0.82);
+        --text: #142033;
+        --text-muted: #5f6f86;
+        --border: rgba(18, 30, 48, 0.12);
+        --border-strong: rgba(18, 30, 48, 0.2);
+        --accent: #0f8b8d;
+        --accent-2: #2563eb;
+        --accent-soft: rgba(37, 99, 235, 0.12);
+        --danger: #c2410c;
+        --danger-soft: rgba(194, 65, 12, 0.12);
+        --ok: #0f766e;
+        --ok-soft: rgba(15, 118, 110, 0.12);
+        --shadow: 0 18px 44px rgba(15, 23, 42, 0.12);
+        --shadow-soft: 0 8px 24px rgba(15, 23, 42, 0.08);
+        --editor-bg: #fdfefe;
+        --editor-border: rgba(18, 30, 48, 0.14);
+        --selection: #fff59d;
+      }
+
+      body[data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #08111f;
+        --bg-elevated: rgba(11, 19, 34, 0.7);
+        --bg-panel: rgba(9, 18, 33, 0.78);
+        --bg-panel-strong: rgba(10, 20, 38, 0.92);
+        --bg-muted: rgba(17, 29, 50, 0.9);
+        --text: #ecf3ff;
+        --text-muted: #91a1bb;
+        --border: rgba(148, 163, 184, 0.14);
+        --border-strong: rgba(148, 163, 184, 0.24);
+        --accent: #22c1c3;
+        --accent-2: #60a5fa;
+        --accent-soft: rgba(96, 165, 250, 0.16);
+        --danger: #fb923c;
+        --danger-soft: rgba(251, 146, 60, 0.16);
+        --ok: #34d399;
+        --ok-soft: rgba(52, 211, 153, 0.14);
+        --shadow: 0 24px 60px rgba(0, 0, 0, 0.38);
+        --shadow-soft: 0 12px 28px rgba(0, 0, 0, 0.26);
+        --editor-bg: #091221;
+        --editor-border: rgba(148, 163, 184, 0.2);
+        --selection: rgba(250, 204, 21, 0.3);
       }
 
       * {
         box-sizing: border-box;
       }
 
+      html {
+        background: var(--bg);
+      }
+
       body {
         margin: 0;
         min-height: 100vh;
-        color: var(--ink);
+        color: var(--text);
         font-family: "Space Grotesk", sans-serif;
         background:
-          radial-gradient(circle at 10% 20%, rgba(14, 165, 233, 0.15), transparent 35%),
-          radial-gradient(circle at 80% 10%, rgba(15, 118, 110, 0.16), transparent 30%),
-          linear-gradient(160deg, var(--bg-1), var(--bg-2));
+          radial-gradient(circle at 0% 10%, rgba(34, 193, 195, 0.14), transparent 30%),
+          radial-gradient(circle at 100% 0%, rgba(37, 99, 235, 0.18), transparent 28%),
+          radial-gradient(circle at 50% 100%, rgba(234, 179, 8, 0.1), transparent 30%),
+          linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--bg) 78%, black 0%));
+        transition: background 180ms ease, color 180ms ease;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+        background-size: 28px 28px;
+        mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.4), transparent 80%);
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+
+      button {
+        appearance: none;
+        border: 1px solid transparent;
+        border-radius: 14px;
+        padding: 9px 13px;
+        font-weight: 700;
+        font-size: 0.84rem;
+        letter-spacing: 0.01em;
+        cursor: pointer;
+        transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      button:active {
+        transform: translateY(0);
+      }
+
+      button:disabled {
+        opacity: 0.48;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      input,
+      select,
+      textarea {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg-panel-strong);
+        color: var(--text);
+        transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+      }
+
+      input:focus,
+      select:focus,
+      textarea:focus,
+      button:focus-visible {
+        outline: none;
+        border-color: color-mix(in srgb, var(--accent-2) 52%, var(--border));
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-soft) 60%, transparent);
       }
 
       .shell {
-        width: 100%;
-        max-width: none;
-        margin: 16px 8px;
-        padding: 0 2px;
+        width: calc(100vw - 16px);
+        margin: 8px auto 16px;
+      }
+
+      .app-frame {
+        position: relative;
+        z-index: 1;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 22px 24px;
+        margin-bottom: 16px;
+        background: linear-gradient(135deg, var(--bg-panel-strong), color-mix(in srgb, var(--bg-panel) 76%, var(--accent-soft)));
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+      }
+
+      .brand {
+        display: grid;
+        gap: 10px;
+      }
+
+      .brand-kicker {
+        display: inline-flex;
+        width: fit-content;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        color: var(--text-muted);
+        background: var(--bg-muted);
+        border: 1px solid var(--border);
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: clamp(1.8rem, 4vw, 2.9rem);
+        line-height: 0.95;
+        letter-spacing: -0.03em;
+      }
+
+      .brand p {
+        margin: 0;
+        color: var(--text-muted);
+        max-width: 720px;
+        font-size: 0.96rem;
+      }
+
+      .topbar-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        justify-content: flex-end;
+      }
+
+      .theme-toggle {
+        min-width: 150px;
+      }
+
+      .kbd-hint {
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: var(--bg-muted);
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.76rem;
       }
 
       .layout {
         display: grid;
-        grid-template-columns: 280px minmax(0, 1fr) 300px;
-        gap: 14px;
+        grid-template-columns: 300px minmax(0, 1fr) 320px;
+        gap: 16px;
         align-items: start;
         min-width: 0;
       }
 
       .layout.left-collapsed {
-        grid-template-columns: 52px minmax(0, 1fr) 300px;
+        grid-template-columns: 62px minmax(0, 1fr) 320px;
       }
 
       .layout.right-collapsed {
-        grid-template-columns: 280px minmax(0, 1fr) 52px;
+        grid-template-columns: 300px minmax(0, 1fr) 62px;
       }
 
       .layout.left-collapsed.right-collapsed {
-        grid-template-columns: 52px minmax(0, 1fr) 52px;
+        grid-template-columns: 62px minmax(0, 1fr) 62px;
       }
 
       .card {
-        background: var(--panel);
-        backdrop-filter: blur(8px);
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        box-shadow: 0 8px 30px rgba(2, 6, 23, 0.08);
+        position: relative;
         min-width: 0;
+        background: linear-gradient(180deg, var(--bg-panel), color-mix(in srgb, var(--bg-panel-strong) 92%, transparent));
+        backdrop-filter: blur(16px);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        box-shadow: var(--shadow-soft);
+        overflow: hidden;
       }
 
-      .header {
-        padding: 16px 18px 10px;
-      }
-
-      .title {
-        margin: 0;
-        font-size: 1.25rem;
-        letter-spacing: 0.02em;
-      }
-
-      .subtitle {
-        margin: 6px 0 0;
-        color: var(--muted);
-        font-size: 0.92rem;
+      .card::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 30%);
       }
 
       .section {
-        padding: 12px 18px 18px;
+        padding: 18px;
         min-width: 0;
+      }
+
+      .panel-header {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .panel-title-wrap {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        flex-wrap: wrap;
+        width: 100%;
+      }
+
+      .panel-title-wrap-stacked {
+        display: grid;
+        gap: 4px;
+        align-items: start;
+      }
+
+      .panel-header-sidebar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+      }
+
+      .panel-header-sidebar .icon-toggle {
+        margin-top: -6px;
+        align-self: start;
+      }
+
+      .panel-title {
+        margin: 0;
+        font-size: 1rem;
+        line-height: 1.1;
+      }
+
+      .panel-subtitle {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 0.76rem;
+        margin-left: auto;
+        text-align: right;
+      }
+
+      .panel-title-wrap-stacked .panel-subtitle {
+        margin-left: 0;
+        text-align: left;
+      }
+
+      .icon-toggle {
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        line-height: 1;
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .icon-toggle svg {
+        width: 18px;
+        height: 18px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .icon-toggle .icon-right,
+      .icon-toggle .icon-left,
+      .icon-toggle .icon-plus,
+      .icon-toggle .icon-minus {
+        display: none;
+      }
+
+      .icon-toggle[data-state="collapsed"][data-direction="left"] .icon-right,
+      .icon-toggle[data-state="expanded"][data-direction="left"] .icon-left,
+      .icon-toggle[data-state="collapsed"][data-direction="right"] .icon-left,
+      .icon-toggle[data-state="expanded"][data-direction="right"] .icon-right,
+      .icon-toggle[data-state="collapsed"][data-direction="vertical"] .icon-plus,
+      .icon-toggle[data-state="expanded"][data-direction="vertical"] .icon-minus {
+        display: block;
       }
 
       .main-stack {
         display: grid;
-        gap: 14px;
+        gap: 16px;
         min-width: 0;
       }
 
-      .assistant-body {
+      .hero-card .section,
+      .assistant-card .section {
+        position: relative;
+        z-index: 1;
+      }
+
+      .hero-card.collapsed .hero-body {
+        display: none;
+      }
+
+      .hero-grid {
         display: grid;
+        gap: 18px;
+      }
+
+      .hero-actions {
+        display: flex;
         gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .hero-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--bg-muted);
+        font-size: 0.8rem;
+        color: var(--text-muted);
+      }
+
+      .pill-strong {
+        color: var(--text);
+      }
+
+      .btn-accent {
+        color: white;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        box-shadow: 0 12px 30px color-mix(in srgb, var(--accent-2) 24%, transparent);
+      }
+
+      .btn-light {
+        color: var(--text);
+        background: var(--bg-muted);
+        border-color: var(--border);
+      }
+
+      .btn-danger {
+        color: var(--danger);
+        background: var(--danger-soft);
+        border-color: color-mix(in srgb, var(--danger) 28%, var(--border));
+      }
+
+      .status-strip {
+        margin-top: 14px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: linear-gradient(180deg, var(--bg-panel-strong), var(--bg-elevated));
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.84rem;
+        white-space: pre-wrap;
+      }
+
+      .status-ok {
+        color: var(--ok);
+        border-color: color-mix(in srgb, var(--ok) 30%, var(--border));
+        background: linear-gradient(180deg, color-mix(in srgb, var(--ok-soft) 58%, var(--bg-panel-strong)), var(--bg-panel-strong));
+      }
+
+      .status-err {
+        color: var(--danger);
+        border-color: color-mix(in srgb, var(--danger) 30%, var(--border));
+        background: linear-gradient(180deg, color-mix(in srgb, var(--danger-soft) 58%, var(--bg-panel-strong)), var(--bg-panel-strong));
       }
 
       .assistant-card.collapsed .assistant-body {
         display: none;
       }
 
+      .assistant-body {
+        display: grid;
+        gap: 12px;
+      }
+
+      .assistant-response,
+      .results,
+      .schema-tree,
+      .editor-shell {
+        background: linear-gradient(180deg, color-mix(in srgb, var(--editor-bg) 96%, transparent), var(--bg-panel-strong));
+        border: 1px solid var(--editor-border);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      }
+
       .assistant-response {
-        min-height: 160px;
+        min-height: 180px;
         max-height: 60vh;
         resize: vertical;
         overflow: auto;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        background: rgba(255, 255, 255, 0.9);
-        padding: 10px 12px;
+        border-radius: 18px;
+        padding: 12px;
         font-family: "IBM Plex Mono", monospace;
         font-size: 0.8rem;
-        line-height: 1.45;
+        line-height: 1.5;
       }
 
       .assistant-thread {
@@ -133,60 +487,10 @@
       }
 
       .assistant-empty {
-        color: var(--muted);
-      }
-
-      .assistant-msg {
-        max-width: 88%;
-        border-radius: 10px;
-        border: 1px solid var(--border);
-        padding: 8px 10px;
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-        position: relative;
-      }
-
-      .assistant-msg-markdown {
-        white-space: normal;
-      }
-
-      .assistant-msg-markdown p {
-        margin: 0 0 8px;
-      }
-
-      .assistant-msg-markdown p:last-child {
-        margin-bottom: 0;
-      }
-
-      .assistant-msg-markdown pre {
-        margin: 8px 0;
-        padding: 10px;
-        border-radius: 8px;
-        border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.8);
-        overflow: auto;
-      }
-
-      .assistant-msg-markdown code {
-        font-family: "IBM Plex Mono", monospace;
-        font-size: 0.78rem;
-      }
-
-      .assistant-msg-markdown ul,
-      .assistant-msg-markdown ol {
-        margin: 0 0 8px 18px;
-      }
-
-      .assistant-msg-markdown h1,
-      .assistant-msg-markdown h2,
-      .assistant-msg-markdown h3,
-      .assistant-msg-markdown h4 {
-        margin: 8px 0 6px;
-        line-height: 1.2;
+        color: var(--text-muted);
       }
 
       .assistant-msg-wrap {
-        position: relative;
         display: flex;
       }
 
@@ -199,35 +503,96 @@
         justify-content: flex-start;
       }
 
+      .assistant-msg {
+        position: relative;
+        max-width: 92%;
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        padding: 10px 12px;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+      }
+
       .assistant-msg-user {
-        background: #e5f1ff;
+        background: color-mix(in srgb, var(--accent-soft) 85%, var(--bg-panel-strong));
       }
 
       .assistant-msg-assistant {
-        background: #f3f7eb;
+        background: color-mix(in srgb, var(--ok-soft) 65%, var(--bg-panel-strong));
       }
 
       .assistant-msg-tool {
-        background: #f7f7f8;
-        color: #4b5563;
+        background: var(--bg-muted);
+        color: var(--text-muted);
       }
 
       .assistant-msg-thinking {
-        background: #f3f7eb;
-        min-width: 58px;
+        min-width: 64px;
+      }
+
+      .assistant-msg-markdown {
+        white-space: normal;
+      }
+
+      .assistant-msg-markdown p,
+      .assistant-msg-markdown ul,
+      .assistant-msg-markdown ol {
+        margin-top: 0;
+      }
+
+      .assistant-msg-markdown p:last-child {
+        margin-bottom: 0;
+      }
+
+      .assistant-msg-markdown pre {
+        margin: 10px 0;
+        padding: 10px;
+        overflow: auto;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--bg-panel-strong) 82%, black 4%);
+      }
+
+      .assistant-msg-markdown code,
+      pre,
+      .assistant-meta,
+      .database-select,
+      .schema-filter,
+      .download-format,
+      .meta-value,
+      .meta-input,
+      .query-item-id,
+      .query-item-meta {
+        font-family: "IBM Plex Mono", monospace;
+      }
+
+      .assistant-use-btn {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: var(--bg-panel-strong);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-size: 0.68rem;
+      }
+
+      .assistant-msg-with-use {
+        padding-top: 28px;
       }
 
       .assistant-thinking-dots {
         display: inline-flex;
         align-items: center;
-        gap: 5px;
+        gap: 6px;
       }
 
       .assistant-thinking-dot {
         width: 7px;
         height: 7px;
         border-radius: 50%;
-        background: #5f6b76;
+        background: var(--text-muted);
         animation: assistant-dot-bloop 1s infinite ease-in-out;
       }
 
@@ -242,7 +607,7 @@
       @keyframes assistant-dot-bloop {
         0%, 80%, 100% {
           transform: translateY(0);
-          opacity: 0.5;
+          opacity: 0.45;
         }
         40% {
           transform: translateY(-4px);
@@ -250,255 +615,103 @@
         }
       }
 
-      .assistant-use-btn {
-        position: absolute;
-        top: 4px;
-        right: 4px;
-        border: 1px solid var(--border);
-        background: #fff;
-        color: var(--ink);
-        border-radius: 6px;
-        font-size: 0.68rem;
-        padding: 2px 6px;
-        cursor: pointer;
-      }
-
-      .assistant-msg-with-use {
-        padding-top: 22px;
-      }
-
       .assistant-prompt {
         width: 100%;
-        min-height: 90px;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 10px 12px;
-        font-family: "IBM Plex Mono", monospace;
-        font-size: 0.82rem;
+        min-height: 104px;
+        padding: 12px 14px;
         resize: vertical;
-        background: #fff;
-        color: var(--ink);
+        font-size: 0.84rem;
       }
 
       .assistant-toolbar {
         display: flex;
-        gap: 10px;
+        gap: 12px;
         align-items: center;
         justify-content: space-between;
         flex-wrap: wrap;
       }
 
-      .assistant-meta {
-        color: var(--muted);
-        font-size: 0.78rem;
-        font-family: "IBM Plex Mono", monospace;
-      }
-
-      .assistant-actions {
+      .assistant-actions,
+      .controls,
+      .download-controls,
+      .schema-controls,
+      .query-list-controls {
         display: flex;
-        gap: 8px;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
       }
 
-      .assistant-actions button:disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
+      .download-controls,
+      .query-list-controls {
+        flex-wrap: nowrap;
+      }
+
+      .download-controls > * ,
+      .query-list-controls > * {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+
+      .assistant-meta {
+        color: var(--text-muted);
+        font-size: 0.78rem;
       }
 
       .editor-shell {
-        height: 260px;
-        min-height: 160px;
-        max-height: 70vh;
+        height: 320px;
+        min-height: 220px;
+        max-height: 72vh;
         resize: vertical;
         overflow: auto;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        background: #fff;
+        border-radius: 22px;
       }
 
-      #editor {
+      #editor,
+      #editorFallback {
         height: 100%;
+        width: 100%;
         border: 0;
-        border-radius: 10px;
-        overflow: hidden;
+        background: transparent;
+        color: var(--text);
       }
 
       #editorFallback {
         display: none;
-        width: 100%;
-        height: 100%;
-        border: 0;
-        border-radius: 10px;
-        padding: 12px;
-        font-family: "IBM Plex Mono", monospace;
+        padding: 16px;
+        resize: none;
         font-size: 14px;
         line-height: 1.5;
-        resize: none;
       }
 
-      .controls {
-        margin-top: 12px;
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        align-items: center;
-      }
-
-      button {
-        appearance: none;
-        border: 0;
-        border-radius: 10px;
-        padding: 10px 14px;
-        font-family: "Space Grotesk", sans-serif;
-        font-weight: 700;
-        cursor: pointer;
-        transition: transform 120ms ease, box-shadow 120ms ease;
-      }
-
-      button:hover {
-        transform: translateY(-1px);
-      }
-
-      button:active {
-        transform: translateY(0);
-      }
-
-      .btn-accent {
-        color: white;
-        background: linear-gradient(90deg, var(--accent), var(--accent-2));
-        box-shadow: 0 6px 18px rgba(14, 116, 144, 0.26);
-      }
-
-      .btn-light {
-        color: var(--ink);
-        background: #e6eef8;
-      }
-
-      .status-strip {
-        margin-top: 12px;
+      .database-select,
+      .schema-filter,
+      .download-format,
+      .meta-input {
+        width: 100%;
         padding: 10px 12px;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        background: rgba(255, 255, 255, 0.75);
-        font-family: "IBM Plex Mono", monospace;
-        font-size: 0.86rem;
-        white-space: pre-wrap;
-      }
-
-      .status-ok {
-        color: var(--ok);
-      }
-
-      .status-err {
-        color: var(--danger);
-      }
-
-      .download-controls {
-        margin-top: 10px;
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        flex-wrap: wrap;
+        font-size: 0.8rem;
       }
 
       .download-format {
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 8px 10px;
-        font-family: "IBM Plex Mono", monospace;
-        font-size: 0.8rem;
-        background: #fff;
-        color: var(--ink);
-      }
-
-      .results {
-        min-height: 240px;
-        margin-top: 10px;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        background: rgba(255, 255, 255, 0.92);
-        padding: 12px;
-        overflow: auto;
-        min-width: 0;
-      }
-
-      .debug-banner {
-        margin-top: 10px;
-        border: 1px dashed var(--border);
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.75);
-        padding: 8px 10px;
-        font-family: "IBM Plex Mono", monospace;
-        font-size: 0.75rem;
-        color: var(--muted);
-        white-space: pre-wrap;
-      }
-
-      .query-list {
-        display: grid;
-        gap: 8px;
+        width: auto;
       }
 
       .schema-panel {
         overflow: hidden;
-      }
-
-      .schema-controls {
-        display: flex;
-        gap: 8px;
-        margin-bottom: 8px;
-        align-items: center;
-      }
-
-      .database-select {
-        width: 100%;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 8px 10px;
-        font-family: "IBM Plex Mono", monospace;
-        font-size: 0.8rem;
-        background: #fff;
-        color: var(--ink);
-      }
-
-      .schema-filter {
-        width: 100%;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 8px 10px;
-        font-family: "IBM Plex Mono", monospace;
-        font-size: 0.8rem;
-        background: #fff;
-        color: var(--ink);
-      }
-
-      .panel-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 8px;
-      }
-
-      .icon-toggle {
-        width: 24px;
-        height: 24px;
-        border-radius: 6px;
-        padding: 0;
-        line-height: 1;
-        font-size: 0.9rem;
+        min-height: min(920px, calc(100vh - 110px));
       }
 
       .schema-tree {
-        max-height: 700px;
+        max-height: 760px;
         overflow: auto;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.82);
-        padding: 6px;
+        border-radius: 18px;
+        padding: 8px;
       }
 
       .schema-tree details {
+        padding: 8px 6px;
         border-bottom: 1px solid var(--border);
-        padding: 6px 4px;
       }
 
       .schema-tree details:last-child {
@@ -507,156 +720,211 @@
 
       .schema-tree summary {
         cursor: pointer;
-        font-family: "IBM Plex Mono", monospace;
+        display: block;
         font-size: 0.8rem;
         white-space: nowrap;
         overflow-x: auto;
-        overflow-y: hidden;
-        display: block;
       }
 
       .schema-columns {
         list-style: none;
-        margin: 8px 0 0;
+        margin: 10px 0 0;
         padding: 0 0 0 10px;
       }
 
       .schema-column-item {
-        font-family: "IBM Plex Mono", monospace;
-        font-size: 0.76rem;
-        line-height: 1.4;
-        color: var(--muted);
         margin: 2px 0;
+        color: var(--text-muted);
+        font-size: 0.76rem;
         white-space: nowrap;
       }
 
       .schema-column-type {
-        color: var(--ink);
+        color: var(--text);
       }
 
       .layout.left-collapsed .schema-tree,
       .layout.left-collapsed .schema-title,
-      .layout.left-collapsed .schema-refresh {
+      .layout.left-collapsed .schema-subtitle,
+      .layout.left-collapsed .schema-refresh,
+      .layout.left-collapsed .schema-filter,
+      .layout.left-collapsed .database-select {
         display: none;
       }
 
+      .layout.left-collapsed .schema-panel .section {
+        min-height: min(920px, calc(100vh - 110px));
+        display: flex;
+        flex-direction: column;
+      }
+
+      .layout.left-collapsed .schema-panel .panel-header {
+        margin-bottom: 0;
+      }
+
       .layout.left-collapsed .schema-controls {
+        min-height: 0;
         margin-bottom: 0;
       }
 
       .layout.right-collapsed .query-list-title,
+      .layout.right-collapsed .query-list-subtitle,
       .layout.right-collapsed .query-list-refresh,
+      .layout.right-collapsed .query-list-delete,
       .layout.right-collapsed .query-list-items {
         display: none;
       }
 
-      .layout.right-collapsed .query-list-controls {
+      .layout.right-collapsed > .card:last-child .section {
+        min-height: min(920px, calc(100vh - 110px));
+        display: flex;
+        flex-direction: column;
+      }
+
+      .layout.right-collapsed > .card:last-child .panel-header {
         margin-bottom: 0;
       }
 
-      .query-list-controls {
-        display: flex;
-        gap: 8px;
-        align-items: center;
+      .layout.right-collapsed > .card:last-child .query-list-controls {
+        min-height: 0;
+        margin-bottom: 0;
+      }
+
+      .query-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .layout > .card:last-child {
+        min-height: min(920px, calc(100vh - 110px));
       }
 
       .query-list-items {
-        max-height: 620px;
+        max-height: 760px;
         overflow: auto;
         display: grid;
-        gap: 6px;
+        gap: 8px;
       }
 
       .query-item {
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.8);
-        padding: 8px;
-        cursor: pointer;
+        width: 100%;
         text-align: left;
+        padding: 12px;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: linear-gradient(180deg, var(--bg-panel-strong), var(--bg-muted));
       }
 
       .query-item.active {
-        border-color: var(--accent-2);
-        box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.35);
-      }
-
-      .query-item-id {
-        font-family: "IBM Plex Mono", monospace;
-        font-size: 0.77rem;
-        word-break: break-all;
+        border-color: color-mix(in srgb, var(--accent-2) 55%, var(--border));
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-soft) 68%, transparent);
       }
 
       .query-item-meta {
-        margin-top: 4px;
-        font-size: 0.73rem;
-        color: var(--muted);
+        margin-top: 6px;
+        color: var(--text-muted);
+        font-size: 0.72rem;
+      }
+
+      .query-item .query-item-id {
+        font-size: 0.72rem;
       }
 
       .meta-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 8px;
+        gap: 10px;
       }
 
       .meta-field {
+        padding: 12px;
         border: 1px solid var(--border);
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.86);
-        padding: 8px 10px;
+        border-radius: 16px;
+        background: linear-gradient(180deg, var(--bg-panel-strong), var(--bg-muted));
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
       }
 
       .meta-label {
-        display: block;
-        color: var(--muted);
-        font-size: 0.75rem;
-        margin-bottom: 4px;
+        display: inline-block;
+        margin-bottom: 0;
+        color: var(--text-muted);
+        font-size: 0.74rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
       }
 
       .meta-value {
-        font-family: "IBM Plex Mono", monospace;
-        font-size: 0.8rem;
+        font-size: 0.82rem;
         word-break: break-word;
+        flex: 1 1 160px;
+        text-align: right;
       }
 
       .meta-input {
-        width: 100%;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 6px 8px;
-        font-family: "IBM Plex Mono", monospace;
-        font-size: 0.8rem;
-        background: #fff;
-        color: var(--ink);
+        flex: 1 1 180px;
+        text-align: right;
+      }
+
+      .results {
+        min-height: 280px;
+        margin-top: 12px;
+        padding: 14px;
+        border-radius: 18px;
+        overflow: auto;
       }
 
       .table-wrap {
         width: 100%;
         max-width: 100%;
         min-width: 0;
-        overflow-x: auto;
-        overflow-y: auto;
+        overflow: auto;
+      }
+
+      .debug-banner {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border: 1px dashed var(--border-strong);
+        border-radius: 14px;
+        background: color-mix(in srgb, var(--bg-muted) 75%, transparent);
+        color: var(--text-muted);
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.74rem;
+        white-space: pre-wrap;
       }
 
       .tabulator {
-        font-family: "IBM Plex Mono", monospace;
-        font-size: 0.8rem;
-        border: 1px solid var(--border);
-        border-radius: 10px;
         width: max-content;
         min-width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.8rem;
+        background: var(--bg-panel-strong);
       }
 
-      .tabulator .tabulator-row.tabulator-selected {
-        background: #fff59d;
+      .tabulator .tabulator-header,
+      .tabulator .tabulator-tableholder,
+      .tabulator .tabulator-footer {
+        background: transparent;
       }
 
-      .tabulator .tabulator-row.results-tabulator-row-selected {
-        background: #fff59d;
+      .tabulator .tabulator-col,
+      .tabulator .tabulator-row,
+      .tabulator .tabulator-cell {
+        border-color: var(--border) !important;
+      }
+
+      .tabulator .tabulator-row.tabulator-selected,
+      .tabulator .tabulator-row.results-tabulator-row-selected,
+      .results-basic-table tbody tr.results-basic-row-selected {
+        background: var(--selection);
       }
 
       .tabulator .tabulator-row.results-tabulator-row-selected .tabulator-cell {
-        background: #fff59d !important;
+        background: var(--selection) !important;
       }
 
       .results-basic-table {
@@ -666,8 +934,8 @@
 
       .results-basic-table th,
       .results-basic-table td {
+        padding: 8px 10px;
         border-bottom: 1px solid var(--border);
-        padding: 6px 8px;
         text-align: left;
       }
 
@@ -675,58 +943,127 @@
         cursor: pointer;
       }
 
-      .results-basic-table tbody tr.results-basic-row-selected {
-        background: #fff59d;
-      }
-
       pre {
         margin: 0;
-        font-family: "IBM Plex Mono", monospace;
         font-size: 0.83rem;
-        line-height: 1.45;
+        line-height: 1.5;
       }
 
-      @media (max-width: 700px) {
-        .layout {
+      .fade-in {
+        animation: fade-in-up 220ms ease;
+      }
+
+      @keyframes fade-in-up {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 1180px) {
+        .schema-panel,
+        .layout.left-collapsed .schema-panel .section,
+        .layout > .card:last-child,
+        .layout.right-collapsed > .card:last-child .section {
+          min-height: 0;
+        }
+
+        .layout,
+        .layout.left-collapsed,
+        .layout.right-collapsed,
+        .layout.left-collapsed.right-collapsed {
           grid-template-columns: 1fr;
         }
+      }
 
+      @media (max-width: 760px) {
         .shell {
-          margin: 10px 4px;
-          padding: 0 2px;
+          width: calc(100vw - 8px);
+          margin: 4px auto 10px;
         }
 
-        #editor {
-          height: 100%;
+        .topbar {
+          padding: 18px;
+          border-radius: 20px;
         }
 
-        .editor-shell {
-          height: 220px;
+        .topbar,
+        .assistant-toolbar,
+        .controls,
+        .download-controls,
+        .query-list-controls,
+        .schema-controls {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .download-controls,
+        .query-list-controls {
+          flex-wrap: wrap;
+        }
+
+        .topbar-actions {
+          width: 100%;
+          justify-content: stretch;
         }
 
         .meta-grid {
           grid-template-columns: 1fr;
         }
 
-        .controls {
-          flex-direction: column;
-          align-items: stretch;
+        button,
+        .theme-toggle {
+          width: 100%;
         }
 
-        button {
-          width: 100%;
+        .editor-shell {
+          height: 260px;
         }
       }
     </style>
   </head>
-  <body>
-    <main class="shell">
-      <div id="appLayout" class="layout">
+  <body data-theme="light">
+    <main class="shell app-frame">
+      <section class="topbar fade-in">
+        <div class="brand">
+          <div class="brand-kicker">AWS Athena Workspace</div>
+          <h1>Athena Query Console</h1>
+          <p>Run SQL, inspect schemas, iterate with the assistant, and move between saved runs without leaving the page.</p>
+        </div>
+        <div class="topbar-actions">
+          <div class="kbd-hint">Submit: Cmd/Ctrl+Enter</div>
+          <button id="themeToggleBtn" class="btn-light theme-toggle" type="button">Switch to Dark Mode</button>
+        </div>
+      </section>
+
+      <div id="appLayout" class="layout fade-in">
         <section class="card schema-panel">
           <div class="section">
-            <div class="panel-header">
-              <h2 class="schema-title" style="margin: 0; font-size: 1rem">Athena Tables</h2>
-              <button id="toggleSchemaBtn" class="btn-light schema-toggle icon-toggle" type="button"><</button>
+            <div class="panel-header panel-header-sidebar">
+              <div class="panel-title-wrap panel-title-wrap-stacked">
+                <h2 class="panel-title schema-title">Athena Tables</h2>
+                <p class="panel-subtitle schema-subtitle">Browse databases, tables, and inferred column types.</p>
+              </div>
+              <button
+                id="toggleSchemaBtn"
+                class="btn-light schema-toggle icon-toggle"
+                type="button"
+                data-direction="left"
+                data-state="expanded"
+                aria-label="Collapse schema sidebar"
+                title="Collapse schema sidebar"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="3.5" y="4.5" width="17" height="15" rx="2"></rect>
+                  <path d="M9 5v14"></path>
+                  <path class="icon-left" d="M15 9l-3 3 3 3"></path>
+                  <path class="icon-right" d="M12 9l3 3-3 3"></path>
+                </svg>
+              </button>
             </div>
             <div class="schema-controls">
               <select id="databaseSelect" class="database-select" aria-label="Athena database selector"></select>
@@ -743,8 +1080,26 @@
           <section id="assistantCard" class="card assistant-card">
             <div class="section">
               <div class="panel-header">
-                <h2 id="assistantTitle" style="margin: 0; font-size: 1rem">Buddy</h2>
-                <button id="toggleAssistantBtn" class="btn-light icon-toggle" type="button">-</button>
+                <div class="panel-title-wrap">
+                  <h2 id="assistantTitle" class="panel-title">Buddy</h2>
+                  <p class="panel-subtitle">Explain queries, debug syntax, and turn suggestions into SQL.</p>
+                </div>
+                <button
+                  id="toggleAssistantBtn"
+                  class="btn-light icon-toggle"
+                  type="button"
+                  data-direction="vertical"
+                  data-state="expanded"
+                  aria-label="Collapse assistant panel"
+                  title="Collapse assistant panel"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="4.5" y="4.5" width="15" height="15" rx="2"></rect>
+                    <path class="icon-minus" d="M8 12h8"></path>
+                    <path class="icon-plus" d="M12 8v8"></path>
+                    <path class="icon-plus" d="M8 12h8"></path>
+                  </svg>
+                </button>
               </div>
               <div class="assistant-body">
                 <div id="assistantResponse" class="assistant-response">Buddy responses will appear here.</div>
@@ -766,28 +1121,56 @@
             </div>
           </section>
 
-          <section class="card">
-            <header class="header">
-              <h1 class="title">Athena Query Console</h1>
-              <p class="subtitle">Write SQL, submit, track progress, and inspect results.</p>
-            </header>
-
+          <section id="heroCard" class="card hero-card">
             <div class="section">
-              <div class="editor-shell">
-                <div id="editor"></div>
-                <textarea id="editorFallback" aria-label="SQL editor fallback"></textarea>
+              <div class="panel-header">
+                <div class="panel-title-wrap">
+                  <h2 class="panel-title">Editor</h2>
+                  <p class="panel-subtitle">Write SQL, format it, submit it, or cancel the active run.</p>
+                </div>
+                <button
+                  id="toggleEditorBtn"
+                  class="btn-light icon-toggle"
+                  type="button"
+                  data-direction="vertical"
+                  data-state="expanded"
+                  aria-label="Collapse editor panel"
+                  title="Collapse editor panel"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="4.5" y="4.5" width="15" height="15" rx="2"></rect>
+                    <path class="icon-minus" d="M8 12h8"></path>
+                    <path class="icon-plus" d="M12 8v8"></path>
+                    <path class="icon-plus" d="M8 12h8"></path>
+                  </svg>
+                </button>
               </div>
-              <div class="controls">
-                <button id="newQueryBtn" class="btn-light" type="button">New Query</button>
-                <button id="submitBtn" class="btn-accent" type="button">Submit Query</button>
+              <div class="hero-body">
+                <div class="hero-grid">
+                  <div class="hero-actions">
+                    <button id="newQueryBtn" class="btn-light" type="button">New Query</button>
+                    <button id="formatSqlBtn" class="btn-light" type="button">Format SQL</button>
+                    <button id="submitBtn" class="btn-accent" type="button">Submit Query</button>
+                    <button id="cancelQueryBtn" class="btn-danger" type="button">Cancel Query</button>
+                  </div>
+                </div>
+                <div class="editor-shell">
+                  <div id="editor"></div>
+                  <textarea id="editorFallback" aria-label="SQL editor fallback"></textarea>
+                </div>
+                <div id="status" class="status-strip">Idle</div>
               </div>
-              <div id="status" class="status-strip">Idle</div>
             </div>
           </section>
 
           <section class="card">
             <div class="section">
-              <h2 style="margin: 0 0 8px; font-size: 1rem">Results</h2>
+              <div class="panel-header">
+                <div class="panel-title-wrap">
+                  <h2 class="panel-title">Results</h2>
+                  <p class="panel-subtitle">Inspect metadata, page through rows, and download the full payload.</p>
+                </div>
+              </div>
               <div class="meta-grid">
                 <div class="meta-field">
                   <span class="meta-label">Name</span>
@@ -829,12 +1212,30 @@
 
         <section class="card">
           <div class="section query-list">
-            <div class="panel-header">
-              <h2 class="query-list-title" style="margin: 0; font-size: 1rem">Saved Queries</h2>
-              <button id="toggleQueryListBtn" class="btn-light query-list-toggle icon-toggle" type="button">></button>
+            <div class="panel-header panel-header-sidebar">
+              <div class="panel-title-wrap panel-title-wrap-stacked">
+                <h2 class="panel-title query-list-title">Saved Queries</h2>
+                <p class="panel-subtitle query-list-subtitle">Recent runs and drafts persisted in MySQL.</p>
+              </div>
+              <button
+                id="toggleQueryListBtn"
+                class="btn-light query-list-toggle icon-toggle"
+                type="button"
+                data-direction="right"
+                data-state="expanded"
+                aria-label="Collapse query sidebar"
+                title="Collapse query sidebar"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="3.5" y="4.5" width="17" height="15" rx="2"></rect>
+                  <path d="M15 5v14"></path>
+                  <path class="icon-right" d="M9 9l3 3-3 3"></path>
+                  <path class="icon-left" d="M12 9l-3 3 3 3"></path>
+                </svg>
+              </button>
             </div>
             <div class="query-list-controls">
-              <button id="deleteQueryBtn" class="btn-light query-list-refresh" type="button">Delete Selected</button>
+              <button id="deleteQueryBtn" class="btn-light query-list-delete" type="button">Delete Selected</button>
               <button id="refreshListBtn" class="btn-light query-list-refresh" type="button">Refresh List</button>
             </div>
             <div id="queryListItems" class="query-list-items"></div>
@@ -872,6 +1273,8 @@
       let schemaCollapsed = false;
       let queryListCollapsed = false;
       let assistantCollapsed = false;
+      let editorCollapsed = false;
+      let selectedTheme = 'light';
       let schemaCache = { database: null, tables: [] };
       let schemaPrefetchGeneration = 0;
       let databaseList = [];
@@ -896,6 +1299,7 @@
       let completionProviderRegistered = false;
       const VALIDATION_DEBOUNCE_MS = 650;
       const UI_STATE_STORAGE_KEY = 'athena_query_console_ui_state_v1';
+      const THEME_STORAGE_KEY = 'athena_query_console_theme_v1';
       const DEFAULT_PAGE_SIZE = 25;
       const SQL_KEYWORDS = [
         'SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'LIMIT', 'OFFSET', 'JOIN', 'LEFT JOIN',
@@ -905,12 +1309,18 @@
         'ELSE', 'END', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'BETWEEN', 'IS NULL', 'IS NOT NULL'
       ];
 
+      const bodyEl = document.body;
+      const themeToggleBtn = document.getElementById('themeToggleBtn');
       const appLayoutEl = document.getElementById('appLayout');
+      const heroCardEl = document.getElementById('heroCard');
       const statusEl = document.getElementById('status');
       const resultsEl = document.getElementById('resultsView');
       const tabularViewEl = document.getElementById('tabularView');
       const newQueryBtn = document.getElementById('newQueryBtn');
+      const formatSqlBtn = document.getElementById('formatSqlBtn');
       const submitBtn = document.getElementById('submitBtn');
+      const cancelQueryBtn = document.getElementById('cancelQueryBtn');
+      const toggleEditorBtn = document.getElementById('toggleEditorBtn');
       const fallbackEditorEl = document.getElementById('editorFallback');
       const metaNameEl = document.getElementById('metaName');
       const metaQueryIdEl = document.getElementById('metaQueryId');
@@ -946,6 +1356,53 @@
 
       function getBuddyLabel() {
         return assistantProviderName === 'anthropic' ? 'Copain' : 'Buddy';
+      }
+
+      function getMonacoThemeName(theme) {
+        return theme === 'dark' ? 'vs-dark' : 'vs';
+      }
+
+      function updateThemeToggleLabel() {
+        themeToggleBtn.textContent = selectedTheme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode';
+      }
+
+      function applyMonacoTheme() {
+        if (typeof monaco === 'undefined' || !monaco.editor) {
+          return;
+        }
+        monaco.editor.setTheme(getMonacoThemeName(selectedTheme));
+      }
+
+      function persistTheme() {
+        try {
+          window.localStorage.setItem(THEME_STORAGE_KEY, selectedTheme);
+        } catch (_error) {
+          // ignore local storage failures
+        }
+      }
+
+      function setTheme(nextTheme, options = {}) {
+        selectedTheme = nextTheme === 'dark' ? 'dark' : 'light';
+        bodyEl.dataset.theme = selectedTheme;
+        updateThemeToggleLabel();
+        applyMonacoTheme();
+        if (options.persist !== false) {
+          persistTheme();
+        }
+      }
+
+      function restoreTheme() {
+        try {
+          const raw = window.localStorage.getItem(THEME_STORAGE_KEY);
+          if (raw === 'dark' || raw === 'light') {
+            selectedTheme = raw;
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            selectedTheme = 'dark';
+          }
+        } catch (_error) {
+          // ignore local storage failures
+        }
+        setTheme(selectedTheme, { persist: false });
       }
 
       function setAssistantProvider(provider) {
@@ -1034,6 +1491,27 @@
         statusEl.textContent = message;
         statusEl.classList.toggle('status-err', Boolean(isError));
         statusEl.classList.toggle('status-ok', !isError);
+      }
+
+      function formatSqlInEditor() {
+        const sql = getEditorValue();
+        if (!sql.trim()) {
+          renderStatus('Query text is required before formatting.', true);
+          return;
+        }
+        if (!window.sqlFormatter || typeof window.sqlFormatter.format !== 'function') {
+          renderStatus('SQL formatter failed to load.', true);
+          return;
+        }
+
+        try {
+          const formatted = window.sqlFormatter.format(sql, { language: 'sql' });
+          setEditorValue(formatted);
+          scheduleValidation();
+          renderStatus('Formatted SQL in editor.', false);
+        } catch (error) {
+          renderStatus(`SQL format failed: ${error.message}`, true);
+        }
       }
 
       function formatElapsed(ms) {
@@ -1468,7 +1946,7 @@
 
         try {
           resultsTable = new Tabulator(tabularViewEl, {
-            layout: 'fitData',
+            layout: 'fitDataStretch',
             maxHeight: '420px',
             columns: tableColumns,
             pagination: true,
@@ -1697,22 +2175,42 @@
       function setSchemaCollapsed(nextCollapsed) {
         schemaCollapsed = Boolean(nextCollapsed);
         appLayoutEl.classList.toggle('left-collapsed', schemaCollapsed);
-        toggleSchemaBtn.textContent = schemaCollapsed ? '>' : '<';
+        toggleSchemaBtn.dataset.state = schemaCollapsed ? 'collapsed' : 'expanded';
+        toggleSchemaBtn.setAttribute('aria-label', schemaCollapsed ? 'Expand schema sidebar' : 'Collapse schema sidebar');
+        toggleSchemaBtn.setAttribute('title', schemaCollapsed ? 'Expand schema sidebar' : 'Collapse schema sidebar');
         persistUiState();
       }
 
       function setQueryListCollapsed(nextCollapsed) {
         queryListCollapsed = Boolean(nextCollapsed);
         appLayoutEl.classList.toggle('right-collapsed', queryListCollapsed);
-        toggleQueryListBtn.textContent = queryListCollapsed ? '<' : '>';
+        toggleQueryListBtn.dataset.state = queryListCollapsed ? 'collapsed' : 'expanded';
+        toggleQueryListBtn.setAttribute('aria-label', queryListCollapsed ? 'Expand query sidebar' : 'Collapse query sidebar');
+        toggleQueryListBtn.setAttribute('title', queryListCollapsed ? 'Expand query sidebar' : 'Collapse query sidebar');
         persistUiState();
       }
 
       function setAssistantCollapsed(nextCollapsed) {
         assistantCollapsed = Boolean(nextCollapsed);
         assistantCardEl.classList.toggle('collapsed', assistantCollapsed);
-        toggleAssistantBtn.textContent = assistantCollapsed ? '+' : '-';
+        toggleAssistantBtn.dataset.state = assistantCollapsed ? 'collapsed' : 'expanded';
+        toggleAssistantBtn.setAttribute('aria-label', assistantCollapsed ? 'Expand assistant panel' : 'Collapse assistant panel');
+        toggleAssistantBtn.setAttribute('title', assistantCollapsed ? 'Expand assistant panel' : 'Collapse assistant panel');
         persistUiState();
+      }
+
+      function setEditorCollapsed(nextCollapsed) {
+        editorCollapsed = Boolean(nextCollapsed);
+        heroCardEl.classList.toggle('collapsed', editorCollapsed);
+        toggleEditorBtn.dataset.state = editorCollapsed ? 'collapsed' : 'expanded';
+        toggleEditorBtn.setAttribute('aria-label', editorCollapsed ? 'Expand editor panel' : 'Collapse editor panel');
+        toggleEditorBtn.setAttribute('title', editorCollapsed ? 'Expand editor panel' : 'Collapse editor panel');
+        persistUiState();
+        if (!editorCollapsed && editor) {
+          window.requestAnimationFrame(() => {
+            editor.layout();
+          });
+        }
       }
 
       function renderSchemaTree(schema) {
@@ -1949,6 +2447,7 @@
               schemaCollapsed,
               queryListCollapsed,
               assistantCollapsed,
+              editorCollapsed,
               selectedQueryId,
               selectedDatabase
             })
@@ -1973,6 +2472,9 @@
           }
           if (typeof state.assistantCollapsed === 'boolean') {
             assistantCollapsed = state.assistantCollapsed;
+          }
+          if (typeof state.editorCollapsed === 'boolean') {
+            editorCollapsed = state.editorCollapsed;
           }
           if (typeof state.selectedQueryId === 'string' && state.selectedQueryId.trim() !== '') {
             selectedQueryId = state.selectedQueryId;
@@ -2295,6 +2797,35 @@
         renderJson({ message: `No results available for query in state ${query.status}.`, status: query.status });
       }
 
+      async function cancelSelectedQuery() {
+        if (!selectedQueryId) {
+          renderStatus('Select a query to cancel.', true);
+          return;
+        }
+
+        cancelQueryBtn.disabled = true;
+        try {
+          const res = await apiRequest(`/query/${selectedQueryId}/cancel`, 'POST', {});
+          if (!res.ok) {
+            renderStatus(
+              `Cancel failed (${res.status}): ${res.json.message || 'unknown error'}`,
+              true
+            );
+            return;
+          }
+
+          renderStatus(`Cancellation requested for ${selectedQueryId}.`, false);
+          await loadQueryById(selectedQueryId);
+          if (res.json.status === 'RUNNING' || res.json.status === 'CANCELLING') {
+            startPolling(selectedQueryId);
+          }
+        } catch (error) {
+          renderStatus(`Cancel error: ${error.message}`, true);
+        } finally {
+          cancelQueryBtn.disabled = false;
+        }
+      }
+
       async function saveQueryNameIfChanged() {
         if (!selectedQueryId) {
           return;
@@ -2541,7 +3072,21 @@
           })
           .catch((error) => {
             renderStatus(`Delete failed: ${error.message}`, true);
-          });
+        });
+      });
+
+      formatSqlBtn.addEventListener('click', () => {
+        formatSqlInEditor();
+      });
+
+      cancelQueryBtn.addEventListener('click', () => {
+        cancelSelectedQuery().catch((error) => {
+          renderStatus(`Cancel error: ${error.message}`, true);
+        });
+      });
+
+      themeToggleBtn.addEventListener('click', () => {
+        setTheme(selectedTheme === 'dark' ? 'light' : 'dark');
       });
 
       refreshSchemaBtn.addEventListener('click', () => {
@@ -2572,6 +3117,10 @@
 
       toggleAssistantBtn.addEventListener('click', () => {
         setAssistantCollapsed(!assistantCollapsed);
+      });
+
+      toggleEditorBtn.addEventListener('click', () => {
+        setEditorCollapsed(!editorCollapsed);
       });
 
       sendAssistantBtn.addEventListener('click', () => {
@@ -2720,7 +3269,7 @@
           editor = monaco.editor.create(document.getElementById('editor'), {
             value: 'SELECT current_timestamp AS ts;',
             language: 'sql',
-            theme: 'vs',
+            theme: getMonacoThemeName(selectedTheme),
             minimap: { enabled: false },
             automaticLayout: true,
             fontSize: 14,
@@ -2734,6 +3283,7 @@
           setSchemaCollapsed(schemaCollapsed);
           setQueryListCollapsed(queryListCollapsed);
           setAssistantCollapsed(assistantCollapsed);
+          setEditorCollapsed(editorCollapsed);
           updateAssistantLabels();
           setAssistantRunStatus('IDLE', null);
           setupMonacoEnhancements();
@@ -2761,6 +3311,7 @@
           setSchemaCollapsed(schemaCollapsed);
           setQueryListCollapsed(queryListCollapsed);
           setAssistantCollapsed(assistantCollapsed);
+          setEditorCollapsed(editorCollapsed);
           updateAssistantLabels();
           setAssistantRunStatus('IDLE', null);
           initializeAppState()
@@ -2774,6 +3325,8 @@
           renderStatus(`Fallback initialization failed: ${error.message}`, true);
         }
       }
+
+      restoreTheme();
 
       if (typeof window.require === 'function') {
         window.require(
