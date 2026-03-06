@@ -1,0 +1,48 @@
+services:
+  athena-mysql:
+    image: mysql:8.4
+    container_name: athena-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command:
+      - --mysql-native-password=ON
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h 127.0.0.1 -u"$${MYSQL_USER}" -p"$${MYSQL_PASSWORD}" --silent
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    volumes:
+      - athena_mysql_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+      - ./docker/mysql/backups:/backups
+
+  athena-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: athena-app
+    restart: unless-stopped
+    environment:
+      PORT: ${APP_PORT:-3000}
+      CONFIG_PATH: /app/config.json
+      AWS_SHARED_CREDENTIALS_FILE: ${AWS_SHARED_CREDENTIALS_FILE:-/root/.aws/credentials}
+      AWS_CONFIG_FILE: ${AWS_CONFIG_FILE:-/root/.aws/config}
+    depends_on:
+      athena-mysql:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - ./docker/config/config.json:/app/config.json:ro
+      - ./results:/data/results
+      - ${AWS_DIR:-${HOME}/.aws}:/root/.aws:ro
+
+volumes:
+  athena_mysql_data:

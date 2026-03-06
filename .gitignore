@@ -2,3 +2,7 @@ config.json
 node_modules
 results
 *.swp
+.env
+docker/config/config.json
+docker/mysql/backups/*.sql
+docker/mysql/backups/*.tgz

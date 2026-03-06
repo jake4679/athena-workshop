@@ -12,6 +12,10 @@ const { LockManager } = require('./services/lockManager');
 const { createServices } = require('./services/appServices');
 const { buildApp } = require('./app');
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function runAwsCliIdentityProbe(timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
     execFile(
@@ -99,14 +103,41 @@ async function logAwsSecurityContext(athenaService) {
   }
 }
 
+async function initializeDatabase(config) {
+  const startupRetryCount = Number(config.server?.startupRetryCount ?? 1);
+  const startupRetryDelayMs = Number(config.server?.startupRetryDelayMs ?? 0);
+  let lastError;
+
+  for (let attempt = 1; attempt <= startupRetryCount; attempt += 1) {
+    try {
+      const pool = await createPool(config.mysql);
+      await initSchema(pool, { defaultAthenaDatabase: config.aws?.database || null });
+      return pool;
+    } catch (error) {
+      lastError = error;
+      logger.warn('Database initialization attempt failed', {
+        attempt,
+        startupRetryCount,
+        startupRetryDelayMs,
+        error: error.message
+      });
+
+      if (attempt < startupRetryCount && startupRetryDelayMs > 0) {
+        await sleep(startupRetryDelayMs);
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 async function startServer() {
   const { config, configPath } = loadConfig();
   configureAwsCredentialEnvironment(config);
   const resultsDir = path.resolve(process.cwd(), config.server.resultsDir);
   fs.mkdirSync(resultsDir, { recursive: true });
 
-  const pool = await createPool(config.mysql);
-  await initSchema(pool, { defaultAthenaDatabase: config.aws?.database || null });
+  const pool = await initializeDatabase(config);
 
   const queryStore = new QueryStore(pool);
   const athenaService = new AthenaService(config);

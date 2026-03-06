@@ -14,6 +14,8 @@ COPY public ./public
 COPY scripts ./scripts
 COPY config.example.json ./config.example.json
 
+RUN mkdir -p /data/results
+
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

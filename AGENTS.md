@@ -53,6 +53,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Each query has a `name` field; default name is the query identifier when created.
 - Each query stores selected Athena `database`.
 - Query result payloads may be large and should be stored in a project subfolder.
+- Dockerized deployments should persist MySQL data in a Docker volume and query result files in a host-mounted project folder so they survive container replacement.
 - Assistant conversation storage uses MySQL tables:
   - `assistant_sessions`
   - `assistant_messages`
@@ -71,6 +72,9 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
   - `providers.openai` (`model`, `baseURL`)
   - `providers.anthropic` (`model`, `baseURL`, `version`, `maxTokens`)
 - Config file path should be passed via CLI when launching server.
+- Server config should support startup retry tuning for containerized dependency readiness:
+  - `server.startupRetryCount`
+  - `server.startupRetryDelayMs`
 
 ## Documentation Requirements
 - `README.md` and `AGENTS.md` must be kept up to date with the latest implementation changes.
@@ -137,4 +141,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Endpoint tests use Node's built-in test runner and validate `POST /query` and `POST /query/:id/cancel` with real `AthenaService` + `QueryStore` codepaths, mocking only AWS `client.send` and MySQL `pool.execute`.
 - Shared test harness utilities live under `tests/helpers/serviceHarness.js`.
 - `scripts/run-test-report.sh` writes timestamped test artifacts to `./results/test-runs/<timestamp>/` for iteration (`npm run test:post-query:report`, `npm run test:cancel-query:report`).
-- Docker support is available via repo-root `Dockerfile` (runtime config injected via mounted `config.json` and `CONFIG_PATH` env var).
+- Docker support includes a repo-root `Dockerfile`, `docker-compose.yml`, Docker-mounted config templates under `docker/config/`, MySQL bootstrap scripts under `docker/mysql/init/`, and backup/restore helpers (`scripts/docker-backup.sh`, `scripts/docker-restore.sh`).
+- Docker Compose runs separate `athena-app` and `athena-mysql` services, persists MySQL data in the `athena_mysql_data` volume, mounts `./results` into the app container, and mounts host config from `./docker/config/config.json`.
+- Docker-oriented config uses `mysql.host = athena-mysql`, `mysql.port = 3306`, and `server.resultsDir = /data/results`.
+- Server startup retries MySQL connection and schema initialization using `server.startupRetryCount` and `server.startupRetryDelayMs`, improving resilience while the MySQL container is still initializing.

@@ -30,24 +30,132 @@ Optional port override:
 node src/server.js --config ./config.json --port 4000
 ```
 
-## Docker
-Build image:
+## Docker Compose
+This repository now includes a full Docker Compose topology for the app and MySQL with persistent storage for:
+
+- MySQL data
+- local query results under `./results`
+- mounted app config under `./docker/config/config.json`
+
+Initial setup:
 ```bash
-docker build -t athena-query-manager .
+cp .env.example .env
+cp docker/config/config.example.json docker/config/config.json
 ```
 
-Run container (mount config + expose port):
+Then edit:
+
+- `.env` for MySQL passwords and optional AWS mount overrides
+- `docker/config/config.json` for AWS region/profile/output location, assistant settings, and any app tuning
+
+Important Docker config values:
+
+- `server.resultsDir` should remain `/data/results`
+- `mysql.host` should remain `athena-mysql`
+- `mysql.port` should remain `3306`
+
+Build images:
 ```bash
-docker run --rm \
-  -p 3000:3000 \
-  -v "$(pwd)/config.json:/app/config.json:ro" \
-  -e PORT=3000 \
-  athena-query-manager
+docker compose build
+```
+
+Start the stack:
+```bash
+docker compose up --build -d
+```
+
+Stop running containers without removing them:
+```bash
+docker compose stop
+```
+
+Stop the stack without deleting persistent data:
+```bash
+docker compose down
+```
+
+Reset containers while preserving data:
+```bash
+docker compose up --build -d
+```
+
+Destroy containers and the MySQL volume:
+```bash
+docker compose down -v
+```
+
+View logs:
+```bash
+docker compose logs
+```
+
+Follow live logs for the app:
+```bash
+docker compose logs -f athena-app
+```
+
+Follow live logs for MySQL:
+```bash
+docker compose logs -f athena-mysql
 ```
 
 Notes:
-- Container expects config at `CONFIG_PATH` (default `/app/config.json`).
-- App still requires access to your MySQL instance and AWS credentials.
+
+- The app container expects config at `CONFIG_PATH=/app/config.json`.
+- The app mounts `./results` to `/data/results`, so cached/downloaded query results survive container replacement.
+- MySQL stores data in the named volume `athena_mysql_data`, so database contents survive container replacement.
+- MySQL bootstrap scripts under `./docker/mysql/init/` run only when the MySQL data volume is initialized for the first time.
+- The app now retries MySQL initialization on startup using `server.startupRetryCount` and `server.startupRetryDelayMs`.
+
+### AWS Credentials In Docker
+By default the app container mounts your local AWS directory:
+
+- host: `${HOME}/.aws`
+- container: `/root/.aws`
+
+This supports shared credentials, config files, and profile-based auth. If you need a different source path, set `AWS_DIR` in `.env`.
+
+If you use `aws.profile` in config, the server sets `AWS_PROFILE` inside the container and clears conflicting static credential env vars before SDK initialization.
+
+### Backups And Restore
+Create a MySQL dump plus a tarball of the local `results/` directory:
+
+```bash
+./scripts/docker-backup.sh
+```
+
+Restore from a SQL dump and optionally a results tarball:
+
+```bash
+./scripts/docker-restore.sh ./docker/mysql/backups/mysql-YYYYMMDD-HHMMSS.sql ./docker/mysql/backups/results-YYYYMMDD-HHMMSS.tgz
+```
+
+The backup artifacts are written under `./docker/mysql/backups/`.
+
+### Inspect MySQL
+Connect to the app database as the application user:
+
+```bash
+docker compose exec athena-mysql mysql -uathena -p athena_manager
+```
+
+Connect as MySQL root:
+
+```bash
+docker compose exec athena-mysql mysql -uroot -p
+```
+
+Common inspection commands:
+
+```sql
+SHOW DATABASES;
+USE athena_manager;
+SHOW TABLES;
+DESCRIBE queries;
+DESCRIBE assistant_sessions;
+DESCRIBE assistant_messages;
+SELECT * FROM queries LIMIT 10;
+```
 
 ## Endpoints
 - `GET /database` (list available Athena databases)
