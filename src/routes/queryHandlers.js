@@ -1,4 +1,21 @@
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { execFile } = require('child_process');
+
+function runPythonExport({ inputPath, format, outputPath }) {
+  const scriptPath = path.resolve(process.cwd(), 'scripts/export_results.py');
+  return new Promise((resolve, reject) => {
+    execFile('python3', [scriptPath, inputPath, format, outputPath], (error, _stdout, stderr) => {
+      if (error) {
+        const detail = stderr && String(stderr).trim() ? String(stderr).trim() : error.message;
+        reject(new Error(detail));
+        return;
+      }
+      resolve();
+    });
+  });
+}
 
 function parseIntOrNull(value) {
   if (value === undefined || value === null || value === '') {
@@ -532,6 +549,90 @@ function getQueryResultsHandler({ services }) {
   };
 }
 
+function downloadQueryResultsHandler({ services, logger }) {
+  return async function downloadQueryResults(req, res) {
+    const id = req.params.id;
+    const formatRaw = String(req.query.format || '').trim().toLowerCase();
+    const format = formatRaw || 'csv';
+    const supportedFormats = new Set(['csv', 'excel', 'xlsx', 'parquet']);
+    if (!supportedFormats.has(format)) {
+      return res.status(400).json({
+        error: 'INVALID_DOWNLOAD_FORMAT',
+        message: 'format must be one of: csv, excel, xlsx, parquet'
+      });
+    }
+
+    try {
+      const query = await services.queryStore.getById(id);
+      if (!query) {
+        return notFoundResponse(res, id);
+      }
+
+      if (query.status === 'RUNNING') {
+        return res.status(409).json({
+          error: 'QUERY_RUNNING',
+          message: 'Results are not ready while query is running',
+          id: query.id,
+          status: query.status
+        });
+      }
+
+      if (query.status === 'CANCELLED') {
+        return res.status(409).json({
+          error: 'QUERY_CANCELLED',
+          message: 'Query has been cancelled',
+          id: query.id,
+          status: query.status
+        });
+      }
+
+      if (query.status !== 'SUCCEEDED' || !query.resultPath) {
+        return res.status(409).json({
+          error: 'RESULTS_NOT_AVAILABLE',
+          message: 'No results available for this query',
+          id: query.id,
+          status: query.status
+        });
+      }
+
+      const extension = format === 'excel' || format === 'xlsx' ? 'xlsx' : format;
+      const outputPath = path.join(
+        os.tmpdir(),
+        `athena-query-${id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`
+      );
+
+      await runPythonExport({
+        inputPath: query.resultPath,
+        format,
+        outputPath
+      });
+
+      const baseName = (query.name || query.id || 'query_results').replace(/[^a-zA-Z0-9._-]+/g, '_');
+      const fileName = `${baseName}.${extension}`;
+
+      logger?.info?.('Query results download generated', {
+        queryId: query.id,
+        format,
+        outputPath
+      });
+
+      return res.download(outputPath, fileName, () => {
+        fs.unlink(outputPath, () => {});
+      });
+    } catch (error) {
+      logger?.error?.('Failed to prepare query results download', {
+        queryId: id,
+        format,
+        error: error.message
+      });
+      return res.status(500).json({
+        error: 'RESULTS_DOWNLOAD_FAILED',
+        message: 'Failed to generate downloadable query results'
+      });
+    }
+  };
+}
+
 function refreshQueryHandler({ services }) {
   return async function refreshQuery(req, res) {
     try {
@@ -628,6 +729,178 @@ function deleteQueryHandler({ services }) {
   };
 }
 
+function sendAssistantPromptHandler({ services }) {
+  return async function sendAssistantPrompt(req, res) {
+    try {
+      const id = req.params.id;
+      const prompt = req.body?.prompt;
+
+      if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
+        return res.status(400).json({
+          error: 'INVALID_REQUEST',
+          message: 'Request body must include non-empty string field: prompt'
+        });
+      }
+
+      const response = await services.sendAssistantPrompt(id, prompt.trim());
+      if (response.error === 'QUERY_NOT_FOUND') {
+        return notFoundResponse(res, id);
+      }
+
+      if (response.error === 'RUN_ACTIVE') {
+        return res.status(409).json({
+          error: 'ASSISTANT_RUN_ACTIVE',
+          message: 'Assistant run already in progress for this query',
+          queryId: id,
+          sessionId: response.session?.id || null,
+          runStatus: response.session?.runStatus || 'RUNNING'
+        });
+      }
+
+      if (response.error === 'RUN_START_FAILED') {
+        return res.status(500).json({
+          error: 'ASSISTANT_RUN_START_FAILED',
+          message: 'Failed to transition assistant run into running state'
+        });
+      }
+
+      return res.status(202).json({
+        queryId: id,
+        sessionId: response.sessionId,
+        runStatus: response.runStatus,
+        runStartedAt: response.runStartedAt
+      });
+    } catch (error) {
+      if (error.code === 'ASSISTANT_NOT_CONFIGURED') {
+        return res.status(503).json({
+          error: 'ASSISTANT_NOT_CONFIGURED',
+          message: 'Assistant API key is not configured for the configured provider'
+        });
+      }
+
+      return res.status(500).json({
+        error: 'ASSISTANT_SEND_FAILED',
+        message: 'Failed to submit assistant prompt'
+      });
+    }
+  };
+}
+
+function getAssistantStatusHandler({ services }) {
+  return async function getAssistantStatus(req, res) {
+    try {
+      const id = req.params.id;
+      const response = await services.getAssistantStatus(id);
+      if (response.error === 'QUERY_NOT_FOUND') {
+        return notFoundResponse(res, id);
+      }
+
+      return res.status(200).json(response);
+    } catch (_error) {
+      return res.status(500).json({
+        error: 'ASSISTANT_STATUS_FAILED',
+        message: 'Failed to get assistant status'
+      });
+    }
+  };
+}
+
+function cancelAssistantRunHandler({ services }) {
+  return async function cancelAssistantRun(req, res) {
+    try {
+      const id = req.params.id;
+      const response = await services.cancelAssistantRun(id);
+      if (response.error === 'QUERY_NOT_FOUND') {
+        return notFoundResponse(res, id);
+      }
+
+      if (response.error === 'NO_ACTIVE_RUN') {
+        return res.status(409).json({
+          error: 'ASSISTANT_RUN_NOT_ACTIVE',
+          message: 'No active assistant run to cancel',
+          queryId: id
+        });
+      }
+
+      return res.status(202).json(response);
+    } catch (_error) {
+      return res.status(500).json({
+        error: 'ASSISTANT_CANCEL_FAILED',
+        message: 'Failed to cancel assistant run'
+      });
+    }
+  };
+}
+
+function getAssistantMessagesHandler({ services }) {
+  return async function getAssistantMessages(req, res) {
+    try {
+      const id = req.params.id;
+      const response = await services.listAssistantMessages(id);
+      if (response.error === 'QUERY_NOT_FOUND') {
+        return notFoundResponse(res, id);
+      }
+
+      return res.status(200).json(response);
+    } catch (_error) {
+      return res.status(500).json({
+        error: 'ASSISTANT_MESSAGES_FAILED',
+        message: 'Failed to get assistant messages'
+      });
+    }
+  };
+}
+
+function compactAssistantSessionHandler({ services }) {
+  return async function compactAssistantSession(req, res) {
+    try {
+      const id = req.params.id;
+      const modeRaw = req.body?.mode;
+      const mode = modeRaw === undefined ? 'empty' : modeRaw;
+      if (typeof mode !== 'string' || mode.trim() === '') {
+        return res.status(400).json({
+          error: 'INVALID_REQUEST',
+          message: 'mode must be a non-empty string when provided'
+        });
+      }
+
+      const response = await services.compactAssistantSession(id, mode.trim());
+      if (response.error === 'QUERY_NOT_FOUND') {
+        return notFoundResponse(res, id);
+      }
+      if (response.error === 'INVALID_MODE') {
+        return res.status(400).json({
+          error: 'ASSISTANT_COMPACT_INVALID_MODE',
+          message: 'mode must be one of: empty, summarize'
+        });
+      }
+      if (response.error === 'RUN_ACTIVE') {
+        return res.status(409).json({
+          error: 'ASSISTANT_RUN_ACTIVE',
+          message: 'Assistant run already in progress for this query',
+          queryId: id,
+          sessionId: response.session?.id || null,
+          runStatus: response.session?.runStatus || 'RUNNING'
+        });
+      }
+
+      return res.status(200).json(response);
+    } catch (error) {
+      if (error.code === 'ASSISTANT_NOT_CONFIGURED') {
+        return res.status(503).json({
+          error: 'ASSISTANT_NOT_CONFIGURED',
+          message: 'Assistant API key is not configured for the configured provider'
+        });
+      }
+
+      return res.status(500).json({
+        error: 'ASSISTANT_COMPACT_FAILED',
+        message: 'Failed to compact assistant session'
+      });
+    }
+  };
+}
+
 module.exports = {
   createQueryHandler,
   updateQueryHandler,
@@ -638,7 +911,13 @@ module.exports = {
   getQueryListHandler,
   getQueryStatusHandler,
   getQueryResultsHandler,
+  downloadQueryResultsHandler,
   refreshQueryHandler,
   cancelQueryHandler,
-  deleteQueryHandler
+  deleteQueryHandler,
+  sendAssistantPromptHandler,
+  getAssistantStatusHandler,
+  cancelAssistantRunHandler,
+  getAssistantMessagesHandler,
+  compactAssistantSessionHandler
 };

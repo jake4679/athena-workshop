@@ -12,6 +12,10 @@ Minimal Node.js HTTP service for submitting and managing AWS Athena queries.
 4. Copy `config.example.json` to `config.json` and set real values.
    - If you use named AWS CLI profiles or IAM Identity Center (SSO), set `aws.profile` in config to force the Node process to use the same profile.
    - When `aws.profile` is set, server startup clears `AWS_ACCESS_KEY_ID`/`AWS_SESSION_TOKEN` env credentials so stale env tokens cannot override profile-based auth.
+   - Assistant settings are configured under `assistant` with provider selection (`assistant.provider`) and generic key resolution (`assistant.apiKeyEnvVar` / `assistant.apiKey`).
+   - Provider-specific options are configured under `providers.<provider>` (for example `providers.openai.model` or `providers.anthropic.model`).
+   - `assistant.assistantSeedInstruction` controls the default instruction injected when a query's assistant session is first created.
+   - `assistant.maxToolRounds` controls assistant tool-loop ceiling (default/recommended: `1000`; cancel via `/query/:id/assistant/cancel` or UI cancel).
 5. Install dependencies:
    ```bash
    npm install
@@ -26,6 +30,133 @@ Optional port override:
 node src/server.js --config ./config.json --port 4000
 ```
 
+## Docker Compose
+This repository now includes a full Docker Compose topology for the app and MySQL with persistent storage for:
+
+- MySQL data
+- local query results under `./results`
+- mounted app config under `./docker/config/config.json`
+
+Initial setup:
+```bash
+cp .env.example .env
+cp docker/config/config.example.json docker/config/config.json
+```
+
+Then edit:
+
+- `.env` for MySQL passwords and optional AWS mount overrides
+- `docker/config/config.json` for AWS region/profile/output location, assistant settings, and any app tuning
+
+Important Docker config values:
+
+- `server.resultsDir` should remain `/data/results`
+- `mysql.host` should remain `athena-mysql`
+- `mysql.port` should remain `3306`
+
+Build images:
+```bash
+docker compose build
+```
+
+Start the stack:
+```bash
+docker compose up --build -d
+```
+
+Stop running containers without removing them:
+```bash
+docker compose stop
+```
+
+Stop the stack without deleting persistent data:
+```bash
+docker compose down
+```
+
+Reset containers while preserving data:
+```bash
+docker compose up --build -d
+```
+
+Destroy containers and the MySQL volume:
+```bash
+docker compose down -v
+```
+
+View logs:
+```bash
+docker compose logs
+```
+
+Follow live logs for the app:
+```bash
+docker compose logs -f athena-app
+```
+
+Follow live logs for MySQL:
+```bash
+docker compose logs -f athena-mysql
+```
+
+Notes:
+
+- The app container expects config at `CONFIG_PATH=/app/config.json`.
+- The app mounts `./results` to `/data/results`, so cached/downloaded query results survive container replacement.
+- MySQL stores data in the named volume `athena_mysql_data`, so database contents survive container replacement.
+- MySQL bootstrap scripts under `./docker/mysql/init/` run only when the MySQL data volume is initialized for the first time.
+- The app now retries MySQL initialization on startup using `server.startupRetryCount` and `server.startupRetryDelayMs`.
+
+### AWS Credentials In Docker
+By default the app container mounts your local AWS directory:
+
+- host: `${HOME}/.aws`
+- container: `/root/.aws`
+
+This supports shared credentials, config files, and profile-based auth. If you need a different source path, set `AWS_DIR` in `.env`.
+
+If you use `aws.profile` in config, the server sets `AWS_PROFILE` inside the container and clears conflicting static credential env vars before SDK initialization.
+
+### Backups And Restore
+Create a MySQL dump plus a tarball of the local `results/` directory:
+
+```bash
+./scripts/docker-backup.sh
+```
+
+Restore from a SQL dump and optionally a results tarball:
+
+```bash
+./scripts/docker-restore.sh ./docker/mysql/backups/mysql-YYYYMMDD-HHMMSS.sql ./docker/mysql/backups/results-YYYYMMDD-HHMMSS.tgz
+```
+
+The backup artifacts are written under `./docker/mysql/backups/`.
+
+### Inspect MySQL
+Connect to the app database as the application user:
+
+```bash
+docker compose exec athena-mysql mysql -uathena -p athena_manager
+```
+
+Connect as MySQL root:
+
+```bash
+docker compose exec athena-mysql mysql -uroot -p
+```
+
+Common inspection commands:
+
+```sql
+SHOW DATABASES;
+USE athena_manager;
+SHOW TABLES;
+DESCRIBE queries;
+DESCRIBE assistant_sessions;
+DESCRIBE assistant_messages;
+SELECT * FROM queries LIMIT 10;
+```
+
 ## Endpoints
 - `GET /database` (list available Athena databases)
 - `GET /database/:database/tables` (list tables for a database)
@@ -33,17 +164,42 @@ node src/server.js --config ./config.json --port 4000
 - `POST /query/validate` body: `{ "query": "SELECT ...", "database": "my_db" }` (database optional; Athena-backed syntax validation)
 - `POST /query` body: `{ "query": "SELECT ...", "database": "my_db" }` (database optional)
 - `GET /query`
-- `PUT /query/:id` body: `{ "name": "Friendly name", "query": "SELECT ..." }` (either field may be provided)
+- `PUT /query/:id` body: `{ "name": "Friendly name", "query": "SELECT ...", "database": "my_db" }` (any provided field is updated)
 - `DELETE /query/:id` (removes query metadata and any local stored results)
 - `GET /query/:id/status`
 - `GET /query/:id/results`
 - Pagination on results: `GET /query/:id/results?limit=25&offset=0` or `GET /query/:id/results?page=1&size=25`
+- Full results download: `GET /query/:id/results/download?format=csv|excel|xlsx|parquet`
 - `POST /query/:id/refresh`
 - `POST /query/:id/cancel`
+- `POST /query/:id/assistant/send` body: `{ "prompt": "..." }` (starts assistant run; lazy-creates session on first send)
+- `GET /query/:id/assistant/status` (returns assistant run state for the query)
+- `POST /query/:id/assistant/cancel` (requests cancellation of active assistant run)
+- `POST /query/:id/assistant/compact` body: `{ "mode": "empty" | "summarize" }` (resets to a new assistant session; summarize mode carries forward a summary into the new session)
+- `GET /query/:id/assistant/messages` (returns persisted assistant conversation messages for the query)
+- Assistant status payload includes cumulative token usage for the current provider session (`usage.promptTokens`, `usage.completionTokens`, `usage.totalTokens`).
+- Assistant provider requests (OpenAI/Anthropic) do not use a local backend timeout; runs complete when model response returns or when cancelled/failed.
+- Assistant includes `run_read_query` tool for self-serve sampling with backend safeguards:
+  - parser/tokenizer guard allows only SELECT-style read queries
+  - read guard allows `TRUNCATE(...)` numeric function usage, while blocking destructive `TRUNCATE TABLE`/statement usage
+  - hard enforced outer `LIMIT 500`
+  - max 5 `run_read_query` calls per assistant run
+  - optional `maxColumns` (1-50) limits returned columns in tool output
+  - backend audit logs capture original SQL, rewritten SQL, limits, and execution stats
 - `GET /health`
 
 ## Frontend
 - `GET /` serves a minimal HTML page with:
+- Collapsible assistant panel with response area, prompt input, run status, and elapsed timer
+- Assistant panel label is provider-aware: `Buddy` for OpenAI and `Copain` for Anthropic (Claude)
+- Assistant prompt send/cancel controls backed by `/query/:id/assistant/*` APIs
+- Assistant compact controls for session reset (`Compact`) and summarize-then-reset (`Compact + Summary`)
+- Assistant prompt submit via `Cmd+Enter` / `Ctrl+Enter` when prompt textarea is focused
+- Assistant run polling (`/assistant/status`) and conversation rendering (`/assistant/messages`)
+- Assistant metadata line includes run status, elapsed timer, and current-session token usage
+- Assistant responses are rendered as sanitized Markdown (with plain-text fallback if Markdown libraries fail to load)
+- Assistant panel shows optimistic user messages immediately on send and a live animated typing indicator while assistant run is active
+- Assistant response bubbles include a `Use` action to copy that response into the SQL editor
 - Monaco SQL editor
 - Athena database selector persisted in browser local storage
 - Monaco autocomplete for SQL keywords, table names, and columns
@@ -53,10 +209,14 @@ node src/server.js --config ./config.json --port 4000
 - Live status polling
 - Query metadata panel
 - Tabulator table for tabular results with remote pagination
+- HTTP/HTTPS values in Tabulator cells render as clickable links
+- Tabular result rows support click-to-select highlighting (Tabulator and fallback HTML table)
+- Results panel includes full-results download controls with format selection (CSV, Excel, Parquet)
 - Right-side query list (`/query`) with click-to-load query text and available results
 - Right-side query list includes delete action for selected query
 - Query metadata includes editable `name` value from backend (defaulted to query ID on create)
 - Left-side collapsible Athena schema tree (tables -> columns with data types)
+- Table schemas are prefetched in the background after table list load
 
 ## Exercise Script
 ```bash
@@ -69,3 +229,41 @@ You can override queries for testing large result sets:
 ```bash
 PAGINATION_SQL='SELECT * FROM your_large_table' ./scripts/exercise.sh http://localhost:3000
 ```
+
+Assistant API exercise:
+```bash
+./scripts/exercise-assistant.sh http://localhost:3000
+```
+
+Environment overrides for assistant exercise:
+- `ASSISTANT_PROMPT` (default: `Give me a SQL query that gives me the current date time`)
+- `QUERY_SQL` (default: empty; script uses `SELECT 1` only for required query creation step)
+- `LOG_FILE` (default: `./results/exercise-assistant-<timestamp>.log`; includes request/response pairs)
+- Script validates send/status/messages/cancel plus compact (`summarize` and `empty`) behavior and usage reset on empty compact.
+
+## Automated Tests
+- Run all tests:
+  ```bash
+  npm test
+  ```
+- Run the mocked `POST /query` endpoint pilot test:
+  ```bash
+  npm run test:post-query
+  ```
+- The pilot test exercises real `AthenaService` and `QueryStore` codepaths while mocking only the AWS client `send` call and MySQL `pool.execute` interface.
+- Run the mocked `POST /query/:id/cancel` endpoint test:
+  ```bash
+  npm run test:cancel-query
+  ```
+- Run the same test with artifact logging for iteration:
+  ```bash
+  npm run test:post-query:report
+  ```
+  This writes timestamped outputs under `./results/test-runs/<timestamp>/` including console output and run metadata.
+  A cancel-endpoint report variant is also available:
+  ```bash
+  npm run test:cancel-query:report
+  ```
+
+## TODO
+- Remove legacy `assistant_sessions.openai_conversation_id` and `assistant_messages.openai_response_id` columns after all known database instances have been migrated and verified to use `provider_conversation_id` / `provider_response_id` only.

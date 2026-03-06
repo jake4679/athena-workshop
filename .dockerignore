@@ -1,0 +1,10 @@
+.git
+.gitignore
+node_modules
+npm-debug.log*
+results
+config.json
+docker/config/config.json
+docker/mysql/backups
+tests
+.DS_Store

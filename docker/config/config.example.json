@@ -2,9 +2,9 @@
   "server": {
     "port": 3000,
     "pollIntervalMs": 3000,
-    "resultsDir": "./results",
-    "startupRetryCount": 1,
-    "startupRetryDelayMs": 0
+    "resultsDir": "/data/results",
+    "startupRetryCount": 20,
+    "startupRetryDelayMs": 3000
   },
   "aws": {
     "region": "us-east-1",
@@ -33,10 +33,10 @@
     }
   },
   "mysql": {
-    "host": "127.0.0.1",
+    "host": "athena-mysql",
     "port": 3306,
-    "user": "root",
-    "password": "root",
+    "user": "athena",
+    "password": "change-me-app-password",
     "database": "athena_manager",
     "connectionLimit": 10
   }

@@ -103,6 +103,207 @@
         min-width: 0;
       }
 
+      .assistant-body {
+        display: grid;
+        gap: 10px;
+      }
+
+      .assistant-card.collapsed .assistant-body {
+        display: none;
+      }
+
+      .assistant-response {
+        min-height: 160px;
+        max-height: 60vh;
+        resize: vertical;
+        overflow: auto;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 10px 12px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.8rem;
+        line-height: 1.45;
+      }
+
+      .assistant-thread {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .assistant-empty {
+        color: var(--muted);
+      }
+
+      .assistant-msg {
+        max-width: 88%;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        padding: 8px 10px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        position: relative;
+      }
+
+      .assistant-msg-markdown {
+        white-space: normal;
+      }
+
+      .assistant-msg-markdown p {
+        margin: 0 0 8px;
+      }
+
+      .assistant-msg-markdown p:last-child {
+        margin-bottom: 0;
+      }
+
+      .assistant-msg-markdown pre {
+        margin: 8px 0;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.8);
+        overflow: auto;
+      }
+
+      .assistant-msg-markdown code {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.78rem;
+      }
+
+      .assistant-msg-markdown ul,
+      .assistant-msg-markdown ol {
+        margin: 0 0 8px 18px;
+      }
+
+      .assistant-msg-markdown h1,
+      .assistant-msg-markdown h2,
+      .assistant-msg-markdown h3,
+      .assistant-msg-markdown h4 {
+        margin: 8px 0 6px;
+        line-height: 1.2;
+      }
+
+      .assistant-msg-wrap {
+        position: relative;
+        display: flex;
+      }
+
+      .assistant-msg-wrap-user {
+        justify-content: flex-end;
+      }
+
+      .assistant-msg-wrap-assistant,
+      .assistant-msg-wrap-tool {
+        justify-content: flex-start;
+      }
+
+      .assistant-msg-user {
+        background: #e5f1ff;
+      }
+
+      .assistant-msg-assistant {
+        background: #f3f7eb;
+      }
+
+      .assistant-msg-tool {
+        background: #f7f7f8;
+        color: #4b5563;
+      }
+
+      .assistant-msg-thinking {
+        background: #f3f7eb;
+        min-width: 58px;
+      }
+
+      .assistant-thinking-dots {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .assistant-thinking-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #5f6b76;
+        animation: assistant-dot-bloop 1s infinite ease-in-out;
+      }
+
+      .assistant-thinking-dot:nth-child(2) {
+        animation-delay: 0.14s;
+      }
+
+      .assistant-thinking-dot:nth-child(3) {
+        animation-delay: 0.28s;
+      }
+
+      @keyframes assistant-dot-bloop {
+        0%, 80%, 100% {
+          transform: translateY(0);
+          opacity: 0.5;
+        }
+        40% {
+          transform: translateY(-4px);
+          opacity: 1;
+        }
+      }
+
+      .assistant-use-btn {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        border: 1px solid var(--border);
+        background: #fff;
+        color: var(--ink);
+        border-radius: 6px;
+        font-size: 0.68rem;
+        padding: 2px 6px;
+        cursor: pointer;
+      }
+
+      .assistant-msg-with-use {
+        padding-top: 22px;
+      }
+
+      .assistant-prompt {
+        width: 100%;
+        min-height: 90px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.82rem;
+        resize: vertical;
+        background: #fff;
+        color: var(--ink);
+      }
+
+      .assistant-toolbar {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+
+      .assistant-meta {
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-family: "IBM Plex Mono", monospace;
+      }
+
+      .assistant-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .assistant-actions button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
       .editor-shell {
         height: 260px;
         min-height: 160px;
@@ -189,6 +390,24 @@
 
       .status-err {
         color: var(--danger);
+      }
+
+      .download-controls {
+        margin-top: 10px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .download-format {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.8rem;
+        background: #fff;
+        color: var(--ink);
       }
 
       .results {
@@ -428,6 +647,38 @@
         min-width: 100%;
       }
 
+      .tabulator .tabulator-row.tabulator-selected {
+        background: #fff59d;
+      }
+
+      .tabulator .tabulator-row.results-tabulator-row-selected {
+        background: #fff59d;
+      }
+
+      .tabulator .tabulator-row.results-tabulator-row-selected .tabulator-cell {
+        background: #fff59d !important;
+      }
+
+      .results-basic-table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      .results-basic-table th,
+      .results-basic-table td {
+        border-bottom: 1px solid var(--border);
+        padding: 6px 8px;
+        text-align: left;
+      }
+
+      .results-basic-table tbody tr {
+        cursor: pointer;
+      }
+
+      .results-basic-table tbody tr.results-basic-row-selected {
+        background: #fff59d;
+      }
+
       pre {
         margin: 0;
         font-family: "IBM Plex Mono", monospace;
@@ -489,6 +740,32 @@
         </section>
 
         <div class="main-stack">
+          <section id="assistantCard" class="card assistant-card">
+            <div class="section">
+              <div class="panel-header">
+                <h2 id="assistantTitle" style="margin: 0; font-size: 1rem">Buddy</h2>
+                <button id="toggleAssistantBtn" class="btn-light icon-toggle" type="button">-</button>
+              </div>
+              <div class="assistant-body">
+                <div id="assistantResponse" class="assistant-response">Buddy responses will appear here.</div>
+                <textarea
+                  id="assistantPromptInput"
+                  class="assistant-prompt"
+                  placeholder="Ask Buddy to explain or fix syntax..."
+                ></textarea>
+                <div class="assistant-toolbar">
+                  <div id="assistantMeta" class="assistant-meta">Status: idle | Elapsed: 00:00 | Tokens: 0 (in:0 out:0)</div>
+                  <div class="assistant-actions">
+                    <button id="sendAssistantBtn" class="btn-accent" type="button">Send</button>
+                    <button id="cancelAssistantBtn" class="btn-light" type="button">Cancel</button>
+                    <button id="compactAssistantBtn" class="btn-light" type="button">Compact</button>
+                    <button id="compactSummaryAssistantBtn" class="btn-light" type="button">Compact + Summary</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <section class="card">
             <header class="header">
               <h1 class="title">Athena Query Console</h1>
@@ -537,6 +814,14 @@
                 <div id="tabularView" class="table-wrap" style="display: none"></div>
                 <pre id="resultsView">No query selected yet.</pre>
               </div>
+              <div class="download-controls">
+                <select id="downloadFormat" class="download-format" aria-label="Download format">
+                  <option value="csv">CSV</option>
+                  <option value="excel">Excel (.xlsx)</option>
+                  <option value="parquet">Parquet (.parquet)</option>
+                </select>
+                <button id="downloadResultsBtn" class="btn-light" type="button">Download Results</button>
+              </div>
               <div id="resultsDebug" class="debug-banner">Debug: idle</div>
             </div>
           </section>
@@ -560,6 +845,8 @@
 
     <script src="https://unpkg.com/sql-formatter@15.4.10/dist/sql-formatter.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
     <script>
       window.require = { paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.53.0/min/vs' } };
       window.MonacoEnvironment = {
@@ -579,14 +866,33 @@
       let pollTimer = null;
       let queryListTimer = null;
       let resultsTable = null;
+      let selectedBasicTableRow = null;
+      let selectedTabulatorRowEl = null;
       let selectedQueryId = null;
       let schemaCollapsed = false;
       let queryListCollapsed = false;
+      let assistantCollapsed = false;
       let schemaCache = { database: null, tables: [] };
       let schemaPrefetchGeneration = 0;
       let databaseList = [];
       let selectedDatabase = null;
       let validateTimer = null;
+      let assistantStatusTimer = null;
+      let assistantElapsedTimer = null;
+      let assistantRunStartedAt = null;
+      let assistantRunStatus = 'IDLE';
+      let assistantPollQueryId = null;
+      let assistantVisibleMessages = [];
+      let assistantServerMessages = [];
+      let assistantPendingUserMessage = null;
+      let assistantThinking = false;
+      let assistantProviderName = 'openai';
+      let assistantUsage = {
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0
+      };
+      let tabularInteractionListenerAttached = false;
       let completionProviderRegistered = false;
       const VALIDATION_DEBOUNCE_MS = 650;
       const UI_STATE_STORAGE_KEY = 'athena_query_console_ui_state_v1';
@@ -612,10 +918,22 @@
       const metaSubmittedAtEl = document.getElementById('metaSubmittedAt');
       const metaResultReceivedAtEl = document.getElementById('metaResultReceivedAt');
       const resultsDebugEl = document.getElementById('resultsDebug');
+      const downloadFormatEl = document.getElementById('downloadFormat');
+      const downloadResultsBtn = document.getElementById('downloadResultsBtn');
       const queryListItemsEl = document.getElementById('queryListItems');
       const refreshListBtn = document.getElementById('refreshListBtn');
       const deleteQueryBtn = document.getElementById('deleteQueryBtn');
       const toggleQueryListBtn = document.getElementById('toggleQueryListBtn');
+      const assistantCardEl = document.getElementById('assistantCard');
+      const assistantTitleEl = document.getElementById('assistantTitle');
+      const toggleAssistantBtn = document.getElementById('toggleAssistantBtn');
+      const assistantResponseEl = document.getElementById('assistantResponse');
+      const assistantPromptInputEl = document.getElementById('assistantPromptInput');
+      const assistantMetaEl = document.getElementById('assistantMeta');
+      const sendAssistantBtn = document.getElementById('sendAssistantBtn');
+      const cancelAssistantBtn = document.getElementById('cancelAssistantBtn');
+      const compactAssistantBtn = document.getElementById('compactAssistantBtn');
+      const compactSummaryAssistantBtn = document.getElementById('compactSummaryAssistantBtn');
       const schemaTreeEl = document.getElementById('schemaTree');
       const databaseSelectEl = document.getElementById('databaseSelect');
       const schemaFilterInputEl = document.getElementById('schemaFilterInput');
@@ -624,6 +942,67 @@
 
       function isSubmitShortcut(event) {
         return event.key === 'Enter' && (event.ctrlKey || event.metaKey);
+      }
+
+      function getBuddyLabel() {
+        return assistantProviderName === 'anthropic' ? 'Copain' : 'Buddy';
+      }
+
+      function setAssistantProvider(provider) {
+        const normalized = String(provider || '').trim().toLowerCase();
+        assistantProviderName = normalized || 'openai';
+        updateAssistantLabels();
+      }
+
+      function updateAssistantLabels() {
+        const label = getBuddyLabel();
+        assistantTitleEl.textContent = label;
+        assistantPromptInputEl.placeholder = `Ask ${label} to explain or fix syntax...`;
+      }
+
+      function ensureTabularInteractionListener() {
+        if (tabularInteractionListenerAttached) {
+          return;
+        }
+        tabularViewEl.addEventListener('click', async (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) {
+            return;
+          }
+
+          const cellEl = target.closest('.tabulator-cell');
+          if (!cellEl) {
+            return;
+          }
+
+          try {
+            const copied = await copyTextToClipboard(cellEl.textContent || '');
+            if (copied) {
+              renderStatus('Copied cell value to clipboard.', false);
+            } else {
+              renderStatus('Could not auto-copy cell value in this browser context.', true);
+            }
+          } catch (error) {
+            renderStatus('Failed to copy cell value to clipboard.', true);
+          }
+
+          const rowEl = cellEl.closest('.tabulator-row');
+          if (!rowEl) {
+            return;
+          }
+
+          if (selectedTabulatorRowEl && selectedTabulatorRowEl !== rowEl) {
+            selectedTabulatorRowEl.classList.remove('results-tabulator-row-selected');
+            selectedTabulatorRowEl.style.backgroundColor = '';
+            selectedTabulatorRowEl.querySelectorAll('.tabulator-cell').forEach((prevCellEl) => {
+              prevCellEl.style.backgroundColor = '';
+            });
+          }
+
+          applyTabulatorSelectionHighlight(rowEl);
+          selectedTabulatorRowEl = rowEl;
+        });
+        tabularInteractionListenerAttached = true;
       }
 
       function getEditorValue() {
@@ -657,11 +1036,167 @@
         statusEl.classList.toggle('status-ok', !isError);
       }
 
+      function formatElapsed(ms) {
+        const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        if (hours > 0) {
+          return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+      }
+
+      function stopAssistantElapsedTimer() {
+        if (assistantElapsedTimer) {
+          clearInterval(assistantElapsedTimer);
+          assistantElapsedTimer = null;
+        }
+      }
+
+      function updateAssistantMeta() {
+        const statusText = String(assistantRunStatus || 'IDLE').toLowerCase();
+        let elapsedText = '00:00';
+        if (assistantRunStartedAt) {
+          const elapsed = Date.now() - assistantRunStartedAt.getTime();
+          elapsedText = formatElapsed(elapsed);
+        }
+        const usageTotal = Number(assistantUsage.totalTokens || 0);
+        const usagePrompt = Number(assistantUsage.promptTokens || 0);
+        const usageCompletion = Number(assistantUsage.completionTokens || 0);
+        assistantMetaEl.textContent = `Status: ${statusText} | Elapsed: ${elapsedText} | Tokens: ${usageTotal} (in:${usagePrompt} out:${usageCompletion})`;
+      }
+
+      function startAssistantElapsedTimer(startedAtIso) {
+        stopAssistantElapsedTimer();
+        assistantRunStartedAt = startedAtIso ? new Date(startedAtIso) : null;
+        updateAssistantMeta();
+        if (!assistantRunStartedAt || Number.isNaN(assistantRunStartedAt.getTime())) {
+          assistantRunStartedAt = null;
+          return;
+        }
+        assistantElapsedTimer = setInterval(() => {
+          updateAssistantMeta();
+        }, 1000);
+      }
+
+      function setAssistantRunStatus(status, runStartedAt) {
+        assistantRunStatus = status || 'IDLE';
+        assistantThinking = assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING';
+        if (assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING') {
+          startAssistantElapsedTimer(runStartedAt || (assistantRunStartedAt ? assistantRunStartedAt.toISOString() : null));
+        } else {
+          if (runStartedAt) {
+            assistantRunStartedAt = new Date(runStartedAt);
+          }
+          stopAssistantElapsedTimer();
+          updateAssistantMeta();
+        }
+
+        const running = assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING';
+        sendAssistantBtn.disabled = running;
+        cancelAssistantBtn.disabled = !running;
+        compactAssistantBtn.disabled = running;
+        compactSummaryAssistantBtn.disabled = running;
+        renderAssistantThread();
+      }
+
+      function setAssistantUsage(usage) {
+        assistantUsage = {
+          promptTokens: Number(usage?.promptTokens || 0),
+          completionTokens: Number(usage?.completionTokens || 0),
+          totalTokens: Number(usage?.totalTokens || 0)
+        };
+        updateAssistantMeta();
+      }
+
+      function renderAssistantMessages(messages) {
+        assistantServerMessages = Array.isArray(messages) ? messages : [];
+        if (assistantPendingUserMessage) {
+          const pendingNormalized = String(assistantPendingUserMessage || '').trim();
+          const hasMatchingServerUser = assistantServerMessages.some(
+            (message) =>
+              String(message.role || '').toLowerCase() === 'user' &&
+              String(message.content || '').trim() === pendingNormalized
+          );
+          if (hasMatchingServerUser) {
+            assistantPendingUserMessage = null;
+          }
+        }
+        renderAssistantThread();
+      }
+
+      function buildAssistantRenderableMessages() {
+        const visible = assistantServerMessages.filter((message) => ['user', 'assistant', 'tool'].includes(message.role));
+        if (assistantPendingUserMessage) {
+          const pendingContent = String(assistantPendingUserMessage || '').trim();
+          const last = visible[visible.length - 1];
+          const isDuplicateTail =
+            last &&
+            String(last.role || '').toLowerCase() === 'user' &&
+            String(last.content || '').trim() === pendingContent;
+          if (!isDuplicateTail) {
+            visible.push({
+              role: 'user',
+              content: pendingContent
+            });
+          }
+        }
+        return visible;
+      }
+
+      function renderAssistantThread() {
+        assistantVisibleMessages = [];
+        const visible = buildAssistantRenderableMessages();
+        if (visible.length === 0 && !assistantThinking) {
+          assistantResponseEl.innerHTML = `<div class="assistant-empty">${escapeHtml(getBuddyLabel())} responses will appear here.</div>`;
+          return;
+        }
+
+        assistantVisibleMessages = visible.map((message) => ({
+          role: String(message.role || '').toLowerCase(),
+          content: String(message.content || '').trim()
+        }));
+
+        const html = visible
+          .map((message, index) => {
+            const role = String(message.role || '').toLowerCase();
+            const roleClass =
+              role === 'user'
+                ? 'assistant-msg-user'
+                : role === 'assistant'
+                  ? 'assistant-msg-assistant'
+                  : 'assistant-msg-tool';
+            const wrapClass =
+              role === 'user'
+                ? 'assistant-msg-wrap-user'
+                : role === 'assistant'
+                  ? 'assistant-msg-wrap-assistant'
+                  : 'assistant-msg-wrap-tool';
+            const content = String(message.content || '').trim() || '(empty)';
+            const useButton =
+              role === 'assistant'
+                ? `<button class="assistant-use-btn" type="button" data-assistant-index="${index}">Use</button>`
+                : '';
+            const extraClass = role === 'assistant' ? 'assistant-msg-with-use assistant-msg-markdown' : '';
+            const renderedContent = role === 'assistant' ? renderMarkdownContent(content) : escapeHtml(content);
+            return `<div class="assistant-msg-wrap ${wrapClass}"><div class="assistant-msg ${roleClass} ${extraClass}">${useButton}${renderedContent}</div></div>`;
+          })
+          .join('');
+        const thinkingHtml = assistantThinking
+          ? `<div class="assistant-msg-wrap assistant-msg-wrap-assistant"><div class="assistant-msg assistant-msg-assistant assistant-msg-thinking"><span class="assistant-thinking-dots"><span class="assistant-thinking-dot"></span><span class="assistant-thinking-dot"></span><span class="assistant-thinking-dot"></span></span></div></div>`
+          : '';
+        assistantResponseEl.innerHTML = `<div class="assistant-thread">${html}${thinkingHtml}</div>`;
+        assistantResponseEl.scrollTop = assistantResponseEl.scrollHeight;
+      }
+
       function renderJson(data) {
         if (resultsTable) {
           resultsTable.destroy();
           resultsTable = null;
         }
+        selectedBasicTableRow = null;
+        selectedTabulatorRowEl = null;
         tabularViewEl.innerHTML = '';
         tabularViewEl.style.display = 'none';
         resultsEl.textContent = JSON.stringify(data, null, 2);
@@ -687,11 +1222,92 @@
           .replaceAll("'", '&#39;');
       }
 
+      function renderMarkdownContent(value) {
+        const raw = String(value || '');
+        if (!raw.trim()) {
+          return '(empty)';
+        }
+
+        if (!window.marked || !window.DOMPurify) {
+          return escapeHtml(raw);
+        }
+
+        const parsed = window.marked.parse(raw, { breaks: true, gfm: true });
+        return window.DOMPurify.sanitize(parsed);
+      }
+
+      async function copyTextToClipboard(value) {
+        const text = value === null || value === undefined ? '' : String(value);
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          try {
+            await navigator.clipboard.writeText(text);
+            return true;
+          } catch (_error) {
+            // fall through to legacy copy path
+          }
+        }
+
+        const temp = document.createElement('textarea');
+        temp.value = text;
+        temp.setAttribute('readonly', '');
+        temp.style.position = 'absolute';
+        temp.style.left = '-9999px';
+        document.body.appendChild(temp);
+        temp.select();
+        const copied = document.execCommand('copy');
+        temp.remove();
+        if (copied) {
+          return true;
+        }
+
+        return false;
+      }
+
+      function clearTabulatorSelectionHighlight() {
+        const highlightedRows = tabularViewEl.querySelectorAll('.tabulator-row.results-tabulator-row-selected');
+        highlightedRows.forEach((el) => {
+          el.classList.remove('results-tabulator-row-selected');
+          el.style.backgroundColor = '';
+          el.querySelectorAll('.tabulator-cell').forEach((cellEl) => {
+            cellEl.style.backgroundColor = '';
+          });
+        });
+      }
+
+      function applyTabulatorSelectionHighlight(rowEl) {
+        rowEl.classList.add('results-tabulator-row-selected');
+        rowEl.style.backgroundColor = '#fff59d';
+        rowEl.querySelectorAll('.tabulator-cell').forEach((cellEl) => {
+          cellEl.style.backgroundColor = '#fff59d';
+        });
+      }
+
+      function parseDownloadFileName(contentDisposition, fallbackName) {
+        if (typeof contentDisposition !== 'string' || !contentDisposition) {
+          return fallbackName;
+        }
+        const utf8Match = contentDisposition.match(/filename\\*=UTF-8''([^;]+)/i);
+        if (utf8Match && utf8Match[1]) {
+          try {
+            return decodeURIComponent(utf8Match[1]);
+          } catch (_error) {
+            return utf8Match[1];
+          }
+        }
+        const basicMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+        if (basicMatch && basicMatch[1]) {
+          return basicMatch[1];
+        }
+        return fallbackName;
+      }
+
       function renderBasicTable(columns, rows) {
+        selectedBasicTableRow = null;
+        selectedTabulatorRowEl = null;
         const safeRows = Array.isArray(rows) ? rows : [];
         const header = columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('');
         const body = safeRows
-          .map((row) => {
+          .map((row, rowIndex) => {
             const rowCells = Array.isArray(row) ? row : [];
             const cells = columns
               .map((_, index) => {
@@ -699,13 +1315,48 @@
                 return `<td>${value === null || value === undefined ? '' : escapeHtml(value)}</td>`;
               })
               .join('');
-            return `<tr>${cells}</tr>`;
+            return `<tr data-row-index="${rowIndex}">${cells}</tr>`;
           })
           .join('');
-        tabularViewEl.innerHTML = `<table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>`;
+        tabularViewEl.innerHTML = `<table class="results-basic-table"><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>`;
         tabularViewEl.style.display = 'block';
         resultsEl.style.display = 'none';
         resultsDebugEl.textContent = `Debug: basic table fallback | columns=${columns.length} rows=${safeRows.length}`;
+
+        const tbody = tabularViewEl.querySelector('tbody');
+        if (tbody) {
+          tbody.addEventListener('click', async (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) {
+              return;
+            }
+            const cell = target.closest('td');
+            if (cell) {
+              try {
+                const copied = await copyTextToClipboard(cell.textContent || '');
+                if (copied) {
+                  renderStatus('Copied cell value to clipboard.', false);
+                } else {
+                  renderStatus('Could not auto-copy cell value in this browser context.', true);
+                }
+              } catch (error) {
+                renderStatus('Failed to copy cell value to clipboard.', true);
+              }
+            }
+            const row = target.closest('tr');
+            if (!row) {
+              return;
+            }
+            if (selectedBasicTableRow && selectedBasicTableRow !== row) {
+              selectedBasicTableRow.classList.remove('results-basic-row-selected');
+            }
+            if (selectedBasicTableRow === row) {
+              return;
+            }
+            row.classList.add('results-basic-row-selected');
+            selectedBasicTableRow = row;
+          });
+        }
       }
 
       function mapRowsToObjects(columns, rows) {
@@ -767,16 +1418,49 @@
           resultsTable.destroy();
           resultsTable = null;
         }
+        selectedTabulatorRowEl = null;
+        ensureTabularInteractionListener();
 
         tabularViewEl.innerHTML = '';
         tabularViewEl.style.display = 'block';
         resultsEl.style.display = 'none';
         resultsDebugEl.textContent = `Debug: initializing Tabulator | columns=${columns.length} initialRows=${Array.isArray(initialData) ? initialData.length : 0}`;
 
+        function toHttpUrlOrNull(value) {
+          if (typeof value !== 'string') {
+            return null;
+          }
+          const trimmed = value.trim();
+          if (!trimmed) {
+            return null;
+          }
+          try {
+            const parsed = new URL(trimmed);
+            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+              return parsed.toString();
+            }
+          } catch (_error) {
+            return null;
+          }
+          return null;
+        }
+
+        function linkAwareCellFormatter(cell) {
+          const rawValue = cell.getValue();
+          const url = toHttpUrlOrNull(rawValue);
+          if (!url) {
+            return rawValue === null || rawValue === undefined ? '' : escapeHtml(String(rawValue));
+          }
+          const safeHref = escapeHtml(url);
+          const safeLabel = escapeHtml(String(rawValue));
+          return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${safeLabel}</a>`;
+        }
+
         const tableColumns = columns.map((name, index) => ({
           title: String(name),
           field: `c${index}`,
-          headerSort: false
+          headerSort: false,
+          formatter: linkAwareCellFormatter
         }));
         const normalizedInitialData = normalizeTabulatorData(columns, initialData);
         resultsDebugEl.textContent =
@@ -847,9 +1531,11 @@
                 ...response,
                 data: []
               };
+            },
+            tableBuilt: () => {
+              resultsTable.setPage(1);
             }
           });
-          resultsTable.setPage(1);
         } catch (error) {
           renderStatus(`Tabulator initialization failed: ${error.message}`, true);
           resultsDebugEl.textContent = `Debug: Tabulator init failed | error=${error.message}`;
@@ -1019,6 +1705,13 @@
         queryListCollapsed = Boolean(nextCollapsed);
         appLayoutEl.classList.toggle('right-collapsed', queryListCollapsed);
         toggleQueryListBtn.textContent = queryListCollapsed ? '<' : '>';
+        persistUiState();
+      }
+
+      function setAssistantCollapsed(nextCollapsed) {
+        assistantCollapsed = Boolean(nextCollapsed);
+        assistantCardEl.classList.toggle('collapsed', assistantCollapsed);
+        toggleAssistantBtn.textContent = assistantCollapsed ? '+' : '-';
         persistUiState();
       }
 
@@ -1255,6 +1948,7 @@
             JSON.stringify({
               schemaCollapsed,
               queryListCollapsed,
+              assistantCollapsed,
               selectedQueryId,
               selectedDatabase
             })
@@ -1276,6 +1970,9 @@
           }
           if (typeof state.queryListCollapsed === 'boolean') {
             queryListCollapsed = state.queryListCollapsed;
+          }
+          if (typeof state.assistantCollapsed === 'boolean') {
+            assistantCollapsed = state.assistantCollapsed;
           }
           if (typeof state.selectedQueryId === 'string' && state.selectedQueryId.trim() !== '') {
             selectedQueryId = state.selectedQueryId;
@@ -1326,14 +2023,236 @@
           setSelectedQuery(preferSelectId);
         } else if (selectedQueryId && !queries.find((q) => q.id === selectedQueryId)) {
           setSelectedQuery(null);
+          syncAssistantForQuery(null).catch(() => {
+            // ignore assistant reset failures
+          });
         }
 
         renderQueryList(queries);
       }
 
+      function clearAssistantStatusPolling() {
+        if (assistantStatusTimer) {
+          clearInterval(assistantStatusTimer);
+          assistantStatusTimer = null;
+        }
+        assistantPollQueryId = null;
+      }
+
+      async function fetchAssistantMessages(queryId) {
+        if (!queryId) {
+          renderAssistantMessages([]);
+          return;
+        }
+
+        const res = await apiRequest(`/query/${queryId}/assistant/messages`, 'GET');
+        if (!res.ok) {
+          renderAssistantMessages([]);
+          return;
+        }
+        setAssistantProvider(res.json.provider || assistantProviderName);
+        renderAssistantMessages(Array.isArray(res.json.messages) ? res.json.messages : []);
+      }
+
+      async function pollAssistantStatus(queryId, options = {}) {
+        if (!queryId) {
+          clearAssistantStatusPolling();
+          setAssistantRunStatus('IDLE', null);
+          return;
+        }
+        if (selectedQueryId !== queryId) {
+          clearAssistantStatusPolling();
+          return;
+        }
+
+        const shouldRefreshMessagesOnIdle = options.refreshMessagesOnIdle !== false;
+        const res = await apiRequest(`/query/${queryId}/assistant/status`, 'GET');
+        if (!res.ok) {
+          renderStatus(`${getBuddyLabel()} status failed (${res.status})`, true);
+          return;
+        }
+
+        setAssistantProvider(res.json.provider || assistantProviderName);
+        const nextStatus = res.json.runStatus || 'IDLE';
+        setAssistantUsage(res.json.usage || null);
+        setAssistantRunStatus(nextStatus, res.json.runStartedAt || null);
+        if (nextStatus === 'FAILED' && res.json.lastErrorMessage) {
+          renderStatus(`${getBuddyLabel()} failed: ${res.json.lastErrorMessage}`, true);
+        }
+
+        if (nextStatus === 'RUNNING' || nextStatus === 'CANCELLING') {
+          return;
+        }
+
+        clearAssistantStatusPolling();
+        if (shouldRefreshMessagesOnIdle) {
+          await fetchAssistantMessages(queryId);
+        }
+      }
+
+      function startAssistantStatusPolling(queryId) {
+        clearAssistantStatusPolling();
+        assistantPollQueryId = queryId;
+        pollAssistantStatus(queryId).catch((error) => {
+          renderStatus(`${getBuddyLabel()} polling error: ${error.message}`, true);
+        });
+
+        assistantStatusTimer = setInterval(() => {
+          if (!assistantPollQueryId) {
+            clearAssistantStatusPolling();
+            return;
+          }
+          pollAssistantStatus(assistantPollQueryId).catch((error) => {
+            renderStatus(`${getBuddyLabel()} polling error: ${error.message}`, true);
+          });
+        }, 2000);
+      }
+
+      async function syncAssistantForQuery(queryId) {
+        if (!queryId) {
+          clearAssistantStatusPolling();
+          stopAssistantElapsedTimer();
+          assistantRunStartedAt = null;
+          assistantPendingUserMessage = null;
+          assistantThinking = false;
+          assistantServerMessages = [];
+          setAssistantUsage(null);
+          setAssistantRunStatus('IDLE', null);
+          renderAssistantMessages([]);
+          return;
+        }
+
+        await pollAssistantStatus(queryId, { refreshMessagesOnIdle: false });
+        await fetchAssistantMessages(queryId);
+        if (assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING') {
+          startAssistantStatusPolling(queryId);
+        }
+      }
+
+      async function sendAssistantPrompt() {
+        if (!selectedQueryId) {
+          renderStatus(`Select or create a query before messaging ${getBuddyLabel()}.`, true);
+          return;
+        }
+
+        const prompt = (assistantPromptInputEl.value || '').trim();
+        if (!prompt) {
+          renderStatus(`${getBuddyLabel()} prompt is required.`, true);
+          return;
+        }
+
+        assistantPendingUserMessage = prompt;
+        assistantThinking = true;
+        assistantPromptInputEl.value = '';
+        renderAssistantThread();
+        sendAssistantBtn.disabled = true;
+        try {
+          const res = await apiRequest(`/query/${selectedQueryId}/assistant/send`, 'POST', { prompt });
+          if (res.ok) {
+            setAssistantProvider(res.json.provider || assistantProviderName);
+            setAssistantRunStatus(res.json.runStatus || 'RUNNING', res.json.runStartedAt || null);
+            renderStatus(`${getBuddyLabel()} prompt submitted.`, false);
+            startAssistantStatusPolling(selectedQueryId);
+            return;
+          }
+
+          if (res.status === 409 && res.json?.error === 'ASSISTANT_RUN_ACTIVE') {
+            assistantPendingUserMessage = null;
+            assistantPromptInputEl.value = prompt;
+            setAssistantRunStatus(res.json.runStatus || 'RUNNING', assistantRunStartedAt ? assistantRunStartedAt.toISOString() : null);
+            renderStatus(`${getBuddyLabel()} run already in progress.`, true);
+            startAssistantStatusPolling(selectedQueryId);
+            return;
+          }
+
+          assistantPendingUserMessage = null;
+          assistantThinking = false;
+          assistantPromptInputEl.value = prompt;
+          renderAssistantThread();
+          renderStatus(`${getBuddyLabel()} send failed (${res.status}): ${res.json.message || 'unknown error'}`, true);
+        } catch (error) {
+          assistantPendingUserMessage = null;
+          assistantThinking = false;
+          assistantPromptInputEl.value = prompt;
+          renderAssistantThread();
+          renderStatus(`${getBuddyLabel()} send error: ${error.message}`, true);
+        } finally {
+          if (!(assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING')) {
+            sendAssistantBtn.disabled = false;
+          }
+        }
+      }
+
+      async function cancelAssistantRun() {
+        if (!selectedQueryId) {
+          renderStatus(`Select a query to cancel ${getBuddyLabel()} run.`, true);
+          return;
+        }
+
+        try {
+          const res = await apiRequest(`/query/${selectedQueryId}/assistant/cancel`, 'POST', {});
+          if (!res.ok) {
+            renderStatus(`${getBuddyLabel()} cancel failed (${res.status}): ${res.json.message || 'unknown error'}`, true);
+            return;
+          }
+          setAssistantProvider(res.json.provider || assistantProviderName);
+          setAssistantRunStatus(res.json.runStatus || 'CANCELLING', assistantRunStartedAt ? assistantRunStartedAt.toISOString() : null);
+          renderStatus(`${getBuddyLabel()} cancellation requested.`, false);
+          startAssistantStatusPolling(selectedQueryId);
+        } catch (error) {
+          renderStatus(`${getBuddyLabel()} cancel error: ${error.message}`, true);
+        }
+      }
+
+      async function compactAssistantSession(mode) {
+        if (!selectedQueryId) {
+          renderStatus(`Select a query to compact ${getBuddyLabel()} session.`, true);
+          return;
+        }
+
+        const normalizedMode = String(mode || 'empty').trim().toLowerCase();
+        if (normalizedMode !== 'empty' && normalizedMode !== 'summarize') {
+          renderStatus('Invalid compact mode requested.', true);
+          return;
+        }
+
+        compactAssistantBtn.disabled = true;
+        compactSummaryAssistantBtn.disabled = true;
+        try {
+          const res = await apiRequest(`/query/${selectedQueryId}/assistant/compact`, 'POST', {
+            mode: normalizedMode
+          });
+          if (!res.ok) {
+            renderStatus(`${getBuddyLabel()} compact failed (${res.status}): ${res.json.message || 'unknown error'}`, true);
+            return;
+          }
+
+          setAssistantProvider(res.json.provider || assistantProviderName);
+          setAssistantUsage(res.json.usage || null);
+          setAssistantRunStatus(res.json.runStatus || 'IDLE', res.json.runStartedAt || null);
+          assistantPendingUserMessage = null;
+          assistantThinking = false;
+          await fetchAssistantMessages(selectedQueryId);
+          renderStatus(
+            normalizedMode === 'summarize'
+              ? `${getBuddyLabel()} conversation compacted with summary into a new session.`
+              : `${getBuddyLabel()} conversation compacted into a new empty session.`,
+            false
+          );
+        } catch (error) {
+          renderStatus(`${getBuddyLabel()} compact error: ${error.message}`, true);
+        } finally {
+          if (!(assistantRunStatus === 'RUNNING' || assistantRunStatus === 'CANCELLING')) {
+            compactAssistantBtn.disabled = false;
+            compactSummaryAssistantBtn.disabled = false;
+          }
+        }
+      }
+
       async function loadQueryById(id) {
         setSelectedQuery(id);
         await refreshQueryList(id);
+        await syncAssistantForQuery(id);
 
         const statusRes = await apiRequest(`/query/${id}/status`, 'GET');
         if (!statusRes.ok) {
@@ -1419,6 +2338,10 @@
         });
         setEditorValue('');
         renderJson({ message: 'No query selected yet.' });
+        assistantPromptInputEl.value = '';
+        syncAssistantForQuery(null).catch(() => {
+          // ignore assistant reset failures
+        });
       }
 
       async function fetchResults(id) {
@@ -1526,6 +2449,7 @@
             renderStatus(`Query submitted: ${id}`);
             renderJson({ message: `Query ${id} submitted. Waiting for results...` });
             await refreshQueryList(id);
+            await syncAssistantForQuery(id);
             startPolling(id);
             return;
           }
@@ -1646,8 +2570,121 @@
         setQueryListCollapsed(!queryListCollapsed);
       });
 
+      toggleAssistantBtn.addEventListener('click', () => {
+        setAssistantCollapsed(!assistantCollapsed);
+      });
+
+      sendAssistantBtn.addEventListener('click', () => {
+        sendAssistantPrompt().catch((error) => {
+          renderStatus(`Assistant send error: ${error.message}`, true);
+        });
+      });
+
+      cancelAssistantBtn.addEventListener('click', () => {
+        cancelAssistantRun().catch((error) => {
+          renderStatus(`${getBuddyLabel()} cancel error: ${error.message}`, true);
+        });
+      });
+
+      compactAssistantBtn.addEventListener('click', () => {
+        compactAssistantSession('empty').catch((error) => {
+          renderStatus(`${getBuddyLabel()} compact error: ${error.message}`, true);
+        });
+      });
+
+      compactSummaryAssistantBtn.addEventListener('click', () => {
+        compactAssistantSession('summarize').catch((error) => {
+          renderStatus(`${getBuddyLabel()} compact error: ${error.message}`, true);
+        });
+      });
+
+      downloadResultsBtn.addEventListener('click', async () => {
+        if (!selectedQueryId) {
+          renderStatus('Select a query before downloading results.', true);
+          return;
+        }
+
+        const format = String(downloadFormatEl.value || 'csv').trim().toLowerCase();
+        downloadResultsBtn.disabled = true;
+        try {
+          const response = await fetch(
+            `/query/${selectedQueryId}/results/download?format=${encodeURIComponent(format)}`,
+            { method: 'GET' }
+          );
+
+          if (!response.ok) {
+            const errorJson = await response.json().catch(() => ({}));
+            throw new Error(errorJson.message || `Download failed (${response.status})`);
+          }
+
+          const blob = await response.blob();
+          const fallbackName = `query-${selectedQueryId}.${format === 'excel' ? 'xlsx' : format}`;
+          const fileName = parseDownloadFileName(
+            response.headers.get('Content-Disposition'),
+            fallbackName
+          );
+
+          const objectUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = objectUrl;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(objectUrl);
+
+          renderStatus(`Downloaded full results as ${fileName}`, false);
+        } catch (error) {
+          renderStatus(`Download failed: ${error.message}`, true);
+        } finally {
+          downloadResultsBtn.disabled = false;
+        }
+      });
+
+      assistantPromptInputEl.addEventListener('keydown', (event) => {
+        if (!isSubmitShortcut(event)) {
+          return;
+        }
+        event.preventDefault();
+        sendAssistantPrompt().catch((error) => {
+          renderStatus(`${getBuddyLabel()} send error: ${error.message}`, true);
+        });
+      });
+
+      assistantResponseEl.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+
+        const button = target.closest('button[data-assistant-index]');
+        if (!button) {
+          return;
+        }
+
+        const index = Number(button.getAttribute('data-assistant-index'));
+        if (!Number.isInteger(index) || index < 0 || index >= assistantVisibleMessages.length) {
+          return;
+        }
+
+        const message = assistantVisibleMessages[index];
+        if (!message || message.role !== 'assistant') {
+          return;
+        }
+
+        setEditorValue(message.content || '');
+        if (fallbackMode) {
+          fallbackEditorEl.focus();
+        } else if (editor) {
+          editor.focus();
+        }
+        renderStatus(`Copied ${getBuddyLabel()} response into query editor.`, false);
+      });
+
       window.addEventListener('beforeunload', () => {
         clearPolling();
+        clearAssistantStatusPolling();
+        stopAssistantElapsedTimer();
         if (validateTimer) {
           clearTimeout(validateTimer);
           validateTimer = null;
@@ -1696,6 +2733,9 @@
           restoreUiState();
           setSchemaCollapsed(schemaCollapsed);
           setQueryListCollapsed(queryListCollapsed);
+          setAssistantCollapsed(assistantCollapsed);
+          updateAssistantLabels();
+          setAssistantRunStatus('IDLE', null);
           setupMonacoEnhancements();
           editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
             submitBtn.click();
@@ -1720,6 +2760,9 @@
           restoreUiState();
           setSchemaCollapsed(schemaCollapsed);
           setQueryListCollapsed(queryListCollapsed);
+          setAssistantCollapsed(assistantCollapsed);
+          updateAssistantLabels();
+          setAssistantRunStatus('IDLE', null);
           initializeAppState()
             .then(async () => {
               startQueryListAutoRefresh();

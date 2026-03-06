@@ -9,9 +9,15 @@ const {
   getQueryListHandler,
   getQueryStatusHandler,
   getQueryResultsHandler,
+  downloadQueryResultsHandler,
   refreshQueryHandler,
   cancelQueryHandler,
-  deleteQueryHandler
+  deleteQueryHandler,
+  sendAssistantPromptHandler,
+  getAssistantStatusHandler,
+  cancelAssistantRunHandler,
+  getAssistantMessagesHandler,
+  compactAssistantSessionHandler
 } = require('./queryHandlers');
 
 function authMiddleware(_req, _res, next) {
@@ -32,9 +38,15 @@ function buildRouter(context) {
   router.put('/query/:id', updateQueryHandler(context));
   router.get('/query/:id/status', getQueryStatusHandler(context));
   router.get('/query/:id/results', getQueryResultsHandler(context));
+  router.get('/query/:id/results/download', downloadQueryResultsHandler(context));
   router.delete('/query/:id', deleteQueryHandler(context));
   router.post('/query/:id/refresh', refreshQueryHandler(context));
   router.post('/query/:id/cancel', cancelQueryHandler(context));
+  router.post('/query/:id/assistant/send', sendAssistantPromptHandler(context));
+  router.get('/query/:id/assistant/status', getAssistantStatusHandler(context));
+  router.post('/query/:id/assistant/cancel', cancelAssistantRunHandler(context));
+  router.get('/query/:id/assistant/messages', getAssistantMessagesHandler(context));
+  router.post('/query/:id/assistant/compact', compactAssistantSessionHandler(context));
 
   return router;
 }
