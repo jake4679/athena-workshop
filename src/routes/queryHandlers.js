@@ -122,7 +122,7 @@ function createQueryHandler({ services, logger }) {
     }
 
     try {
-      const created = await services.createQuery(queryText, databaseName);
+      const created = await services.createQuery(queryText, databaseName, req.auth?.user?.id || null);
       return res.status(202).json({
         id: created.id,
         name: created.name,
@@ -144,7 +144,7 @@ function getQueryStatusHandler({ services }) {
   return async function getQueryStatus(req, res) {
     try {
       const id = req.params.id;
-      const query = await services.queryStore.getById(id);
+      const query = req.queryRecord || (await services.queryStore.getById(id));
 
       if (!query) {
         return notFoundResponse(res, id);
@@ -173,9 +173,10 @@ function getQueryStatusHandler({ services }) {
 }
 
 function getQueryListHandler({ services }) {
-  return async function getQueryList(_req, res) {
+  return async function getQueryList(req, res) {
     try {
-      const queries = await services.queryStore.listAll();
+      const userId = req.query.userId ? String(req.query.userId).trim() : null;
+      const queries = await services.queryStore.listAll({ userId: userId || null });
       return res.status(200).json({
         queries: queries.map((query) => ({
           id: query.id,
@@ -348,7 +349,7 @@ function updateQueryHandler({ services }) {
   return async function updateQuery(req, res) {
     try {
       const id = req.params.id;
-      const existing = await services.queryStore.getById(id);
+      const existing = req.queryRecord || (await services.queryStore.getById(id));
       if (!existing) {
         return notFoundResponse(res, id);
       }
@@ -416,7 +417,7 @@ function getQueryResultsHandler({ services }) {
   return async function getQueryResults(req, res) {
     try {
       const id = req.params.id;
-      const query = await services.queryStore.getById(id);
+      const query = req.queryRecord || (await services.queryStore.getById(id));
 
       if (!query) {
         return notFoundResponse(res, id);
@@ -575,7 +576,7 @@ function downloadQueryResultsHandler({ services, logger }) {
     }
 
     try {
-      const query = await services.queryStore.getById(id);
+      const query = req.queryRecord || (await services.queryStore.getById(id));
       if (!query) {
         return notFoundResponse(res, id);
       }

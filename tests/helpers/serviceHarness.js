@@ -38,10 +38,11 @@ function createInMemoryPool() {
       const normalizedSql = String(sql).replace(/\s+/g, ' ').trim().toUpperCase();
 
       if (normalizedSql.startsWith('INSERT INTO QUERIES')) {
-        const [id, name, databaseName, queryText, athenaQueryExecutionId, status, submittedAt, updatedAt] = params;
+        const [id, name, createdByUserId, databaseName, queryText, athenaQueryExecutionId, status, submittedAt, updatedAt] = params;
         rowsById.set(id, {
           id,
           name,
+          created_by_user_id: createdByUserId,
           database_name: databaseName,
           query_text: queryText,
           athena_query_execution_id: athenaQueryExecutionId,

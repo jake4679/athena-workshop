@@ -5,6 +5,8 @@ BASE_URL="${1:-http://localhost:3000}"
 QUERY1_SQL="${QUERY1_SQL:-SELECT current_timestamp}"
 QUERY2_SQL="${QUERY2_SQL:-SELECT * FROM information_schema.tables}"
 PAGINATION_SQL="${PAGINATION_SQL:-SELECT * FROM information_schema.columns LIMIT 200}"
+COOKIE_JAR="${COOKIE_JAR:-}"
+COOKIE_HEADER="${COOKIE_HEADER:-}"
 FAILURES=0
 LAST_BODY=""
 LAST_STATUS=""
@@ -22,12 +24,19 @@ request() {
   local url="$2"
   local body="${3:-}"
   local tmp
+  local curl_args=()
 
   tmp=$(mktemp)
+  if [[ -n "$COOKIE_JAR" ]]; then
+    curl_args+=(-b "$COOKIE_JAR" -c "$COOKIE_JAR")
+  fi
+  if [[ -n "$COOKIE_HEADER" ]]; then
+    curl_args+=(-H "Cookie: $COOKIE_HEADER")
+  fi
   if [[ -n "$body" ]]; then
-    LAST_STATUS=$(curl -sS -o "$tmp" -w '%{http_code}' -X "$method" "$url" -H 'Content-Type: application/json' -d "$body")
+    LAST_STATUS=$(curl -sS -o "$tmp" -w '%{http_code}' -X "$method" "$url" "${curl_args[@]}" -H 'Content-Type: application/json' -d "$body")
   else
-    LAST_STATUS=$(curl -sS -o "$tmp" -w '%{http_code}' -X "$method" "$url")
+    LAST_STATUS=$(curl -sS -o "$tmp" -w '%{http_code}' -X "$method" "$url" "${curl_args[@]}")
   fi
 
   LAST_BODY=$(cat "$tmp")
@@ -118,6 +127,9 @@ require_cmd curl
 require_cmd jq
 
 echo "Running exercise against $BASE_URL"
+if [[ -z "$COOKIE_JAR" && -z "$COOKIE_HEADER" ]]; then
+  echo "WARNING: no COOKIE_JAR or COOKIE_HEADER configured; authenticated endpoints will return 401 once auth is enabled." >&2
+fi
 
 request GET "$BASE_URL/health"
 assert_status 200 "health endpoint"

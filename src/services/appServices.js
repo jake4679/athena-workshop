@@ -1,14 +1,15 @@
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
-function createServices({ queryStore, assistantService, athenaService, lockManager, logger }) {
-  async function createQuery(queryText, databaseName) {
+function createServices({ queryStore, assistantService, athenaService, lockManager, logger, userStore, authService }) {
+  async function createQuery(queryText, databaseName, createdByUserId = null) {
     const id = uuidv4();
     const submitted = await athenaService.submitQuery(queryText, databaseName);
 
     const created = await queryStore.create({
       id,
       name: id,
+      createdByUserId,
       databaseName: submitted.databaseName,
       queryText,
       athenaQueryExecutionId: submitted.athenaQueryExecutionId,
@@ -234,6 +235,8 @@ function createServices({ queryStore, assistantService, athenaService, lockManag
 
   return {
     queryStore,
+    userStore,
+    authService,
     assistantService,
     createQuery,
     refreshQuery,

@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node src/server.js --config ./config.json",
     "start:dev": "node src/server.js --config ./config.json",
+    "admin": "node ./scripts/admin.js --config ./config.json",
     "test": "node --test",
     "test:post-query": "node --test tests/query.create.test.js",
     "test:post-query:report": "bash ./scripts/run-test-report.sh tests/query.create.test.js",
@@ -16,7 +17,10 @@
   "dependencies": {
     "@aws-sdk/client-athena": "^3.864.0",
     "express": "^4.21.2",
+    "express-mysql-session": "^3.0.3",
+    "express-session": "^1.19.0",
     "mysql2": "^3.14.5",
+    "openid-client": "^6.8.2",
     "uuid": "^11.1.0"
   }
 }

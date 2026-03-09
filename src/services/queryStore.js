@@ -17,6 +17,7 @@ function fromRow(row) {
   return {
     id: row.id,
     name: row.name,
+    createdByUserId: row.created_by_user_id || null,
     databaseName: row.database_name || null,
     queryText: row.query_text,
     athenaQueryExecutionId: row.athena_query_execution_id,
@@ -40,11 +41,12 @@ class QueryStore {
     const now = new Date();
     await this.pool.execute(
       `INSERT INTO queries (
-        id, name, database_name, query_text, athena_query_execution_id, status, submitted_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, name, created_by_user_id, database_name, query_text, athena_query_execution_id, status, submitted_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         record.id,
         record.name,
+        record.createdByUserId || null,
         record.databaseName || null,
         record.queryText,
         record.athenaQueryExecutionId,
@@ -67,9 +69,36 @@ class QueryStore {
     return rows.map(fromRow);
   }
 
-  async listAll() {
+  async listAll(options = {}) {
+    if (options.userId) {
+      const [rows] = await this.pool.execute(
+        'SELECT * FROM queries WHERE created_by_user_id = ? ORDER BY submitted_at DESC',
+        [options.userId]
+      );
+      return rows.map(fromRow);
+    }
+
     const [rows] = await this.pool.execute('SELECT * FROM queries ORDER BY submitted_at DESC');
     return rows.map(fromRow);
+  }
+
+  async listUnowned() {
+    const [rows] = await this.pool.execute(
+      'SELECT * FROM queries WHERE created_by_user_id IS NULL ORDER BY submitted_at DESC'
+    );
+    return rows.map(fromRow);
+  }
+
+  async assignOwner(id, userId) {
+    const now = new Date();
+    await this.pool.execute(
+      `UPDATE queries
+      SET created_by_user_id = ?,
+          updated_at = ?
+      WHERE id = ?`,
+      [userId || null, now, id]
+    );
+    return this.getById(id);
   }
 
   async updateQueryDetails(id, details = {}) {

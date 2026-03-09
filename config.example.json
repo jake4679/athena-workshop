@@ -6,6 +6,26 @@
     "startupRetryCount": 1,
     "startupRetryDelayMs": 0
   },
+  "auth": {
+    "mode": "oidc",
+    "baseURL": "http://localhost:3000",
+    "sessionSecret": "change-me-session-secret",
+    "sessionCookieName": "athena.sid",
+    "sessionMaxAgeMs": 604800000,
+    "secureCookies": false,
+    "devUser": {
+      "id": "dev-user-local",
+      "email": "dev@example.com",
+      "firstName": "Dev",
+      "lastName": "User",
+      "roles": ["admin", "querier", "viewer"]
+    },
+    "google": {
+      "issuer": "https://accounts.google.com",
+      "clientId": "change-me-google-client-id",
+      "clientSecret": "change-me-google-client-secret"
+    }
+  },
   "aws": {
     "region": "us-east-1",
     "profile": "default",

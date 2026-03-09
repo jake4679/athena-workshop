@@ -10,6 +10,14 @@ Minimal Node.js HTTP service for submitting and managing AWS Athena queries.
    CREATE DATABASE athena_manager;
    ```
 4. Copy `config.example.json` to `config.json` and set real values.
+   - Authentication settings are configured under `auth`.
+   - `auth.mode` supports:
+     - `oidc` for normal Google login
+     - `disabled` for local/dev testing with a fixed configured user
+   - `auth.baseURL` must match the browser-visible server origin used for Google callback handling.
+   - `auth.sessionSecret` signs the session cookie.
+   - `auth.google.clientId` and `auth.google.clientSecret` must match your Google OIDC application.
+   - When `auth.mode = "disabled"`, the app auto-authenticates as `auth.devUser`; this mode is blocked when `NODE_ENV=production`.
    - If you use named AWS CLI profiles or IAM Identity Center (SSO), set `aws.profile` in config to force the Node process to use the same profile.
    - When `aws.profile` is set, server startup clears `AWS_ACCESS_KEY_ID`/`AWS_SESSION_TOKEN` env credentials so stale env tokens cannot override profile-based auth.
    - Assistant settings are configured under `assistant` with provider selection (`assistant.provider`) and generic key resolution (`assistant.apiKeyEnvVar` / `assistant.apiKey`).
@@ -152,18 +160,25 @@ SHOW DATABASES;
 USE athena_manager;
 SHOW TABLES;
 DESCRIBE queries;
+DESCRIBE users;
+DESCRIBE user_identities;
+DESCRIBE user_roles;
 DESCRIBE assistant_sessions;
 DESCRIBE assistant_messages;
 SELECT * FROM queries LIMIT 10;
 ```
 
 ## Endpoints
+- `GET /auth/me` (returns current user profile + roles or unauthenticated state)
+- `GET /auth/login/google` (starts Google OIDC login)
+- `GET /auth/google/callback` (Google OIDC callback)
+- `POST /auth/logout` (destroys current session)
 - `GET /database` (list available Athena databases)
 - `GET /database/:database/tables` (list tables for a database)
 - `GET /database/:database/:table/schema` (columns/types for a table)
 - `POST /query/validate` body: `{ "query": "SELECT ...", "database": "my_db" }` (database optional; Athena-backed syntax validation)
 - `POST /query` body: `{ "query": "SELECT ...", "database": "my_db" }` (database optional)
-- `GET /query`
+- `GET /query` and `GET /query?userId=<user-id>`
 - `PUT /query/:id` body: `{ "name": "Friendly name", "query": "SELECT ...", "database": "my_db" }` (any provided field is updated)
 - `DELETE /query/:id` (removes query metadata and any local stored results)
 - `GET /query/:id/status`
@@ -177,6 +192,10 @@ SELECT * FROM queries LIMIT 10;
 - `POST /query/:id/assistant/cancel` (requests cancellation of active assistant run)
 - `POST /query/:id/assistant/compact` body: `{ "mode": "empty" | "summarize" }` (resets to a new assistant session; summarize mode carries forward a summary into the new session)
 - `GET /query/:id/assistant/messages` (returns persisted assistant conversation messages for the query)
+- `GET /users` (admin only)
+- `GET /users/:id` (self or admin)
+- `PUT /users/:id` body: `{ "email": "new@example.com", "firstName": "Ada", "lastName": "Lovelace" }` for self updates; admins may also send `{ "status": "ACTIVE" | "DISABLED" }`
+- `DELETE /users/:id` (admin only; disables the user)
 - Assistant status payload includes cumulative token usage for the current provider session (`usage.promptTokens`, `usage.completionTokens`, `usage.totalTokens`).
 - Assistant provider requests (OpenAI/Anthropic) do not use a local backend timeout; runs complete when model response returns or when cancelled/failed.
 - Assistant includes `run_read_query` tool for self-serve sampling with backend safeguards:
@@ -190,6 +209,8 @@ SELECT * FROM queries LIMIT 10;
 
 ## Frontend
 - `GET /` serves a minimal HTML page with:
+- Google sign-in/sign-out controls and current-user/role summary sourced from `/auth/me`
+- When `auth.mode = "disabled"`, the frontend shows the configured dev user and hides the Google sign-in button
 - Refreshed glass-panel UI with responsive card layout and higher-contrast controls
 - General action buttons use a compact size, while sidebar collapse toggles remain larger
 - Main shell stretches to the full browser width with narrow outer gutters
@@ -227,6 +248,7 @@ SELECT * FROM queries LIMIT 10;
 - Tabular result rows support click-to-select highlighting (Tabulator and fallback HTML table)
 - Results panel includes full-results download controls with format selection (CSV, Excel, Parquet)
 - Right-side query list (`/query`) with click-to-load query text and available results
+- Right-side query list uses `GET /query?userId=<current-user-id>` so the visible list remains scoped to the signed-in user
 - Right-side query list includes delete action for selected query
 - Query metadata includes editable `name` value from backend (defaulted to query ID on create)
 - Left-side collapsible Athena schema tree (tables -> columns with data types)
@@ -238,6 +260,13 @@ SELECT * FROM queries LIMIT 10;
 ```
 
 `jq` is used by the script for assertions and JSON handling.
+Authenticated API exercise now requires either:
+
+- `COOKIE_JAR=/path/to/cookies.txt`
+- `COOKIE_HEADER='athena.sid=...'`
+
+If neither is provided, the script warns that authenticated endpoints will return `401`.
+
 You can override queries for testing large result sets:
 
 ```bash
@@ -253,7 +282,70 @@ Environment overrides for assistant exercise:
 - `ASSISTANT_PROMPT` (default: `Give me a SQL query that gives me the current date time`)
 - `QUERY_SQL` (default: empty; script uses `SELECT 1` only for required query creation step)
 - `LOG_FILE` (default: `./results/exercise-assistant-<timestamp>.log`; includes request/response pairs)
+- `COOKIE_JAR` or `COOKIE_HEADER` for authenticated assistant API access
 - Script validates send/status/messages/cancel plus compact (`summarize` and `empty`) behavior and usage reset on empty compact.
+
+## Authorization Model
+- `viewer`: can read all queries, download results, and read assistant conversations
+- `querier`: can do everything `viewer` can do, plus create/update/refresh/cancel owned queries and send/cancel/compact owned assistant runs
+- `admin`: can read all queries/results/assistant messages, manage users, and delete any query, including legacy unowned queries
+
+`admin` is not an implicit `querier`. If someone should administer and run queries, assign both roles.
+
+## Auth Bypass Mode
+For local testing without Google login, set:
+
+```json
+{
+  "auth": {
+    "mode": "disabled",
+    "devUser": {
+      "id": "dev-user-local",
+      "email": "dev@example.com",
+      "firstName": "Dev",
+      "lastName": "User",
+      "roles": ["admin", "querier", "viewer"]
+    }
+  }
+}
+```
+
+Behavior:
+- `/auth/me` returns the configured dev user
+- authenticated API requests succeed without Google login
+- Google login is disabled
+- this mode is rejected when `NODE_ENV=production`
+
+## Admin CLI
+Use the backend admin helper with the same config file you use for the server:
+
+```bash
+npm run admin -- list-users
+npm run admin -- grant-role --email user@example.com --role admin
+npm run admin -- disable-user --email user@example.com
+npm run admin -- list-queries --userId <user-id>
+npm run admin -- list-unowned-queries
+npm run admin -- assign-query --queryId <query-id> --userId <user-id>
+```
+
+JSON output for automation:
+
+```bash
+npm run admin -- list-users --json
+```
+
+Without `npm`:
+
+```bash
+node ./scripts/admin.js --config ./config.json list-users
+```
+
+With Docker:
+
+```bash
+docker compose exec athena-app node ./scripts/admin.js --config /app/config.json list-users
+docker compose exec athena-app node ./scripts/admin.js --config /app/config.json grant-role --email user@example.com --role admin
+```
 
 ## Automated Tests
 - Run all tests:

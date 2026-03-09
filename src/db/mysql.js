@@ -17,9 +17,90 @@ async function initSchema(pool, options = {}) {
   const defaultAthenaDatabase = options.defaultAthenaDatabase || null;
 
   await pool.execute(`
+    CREATE TABLE IF NOT EXISTS users (
+      id VARCHAR(36) PRIMARY KEY,
+      email VARCHAR(255) NULL,
+      first_name VARCHAR(255) NULL,
+      last_name VARCHAR(255) NULL,
+      status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
+      created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL,
+      UNIQUE KEY uq_users_email (email),
+      INDEX idx_users_status (status)
+    )
+  `);
+
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS user_identities (
+      id VARCHAR(36) PRIMARY KEY,
+      user_id VARCHAR(36) NOT NULL,
+      provider VARCHAR(64) NOT NULL,
+      provider_subject VARCHAR(255) NOT NULL,
+      provider_email VARCHAR(255) NULL,
+      provider_first_name VARCHAR(255) NULL,
+      provider_last_name VARCHAR(255) NULL,
+      provider_profile_json LONGTEXT NULL,
+      created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL,
+      CONSTRAINT fk_user_identities_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE,
+      UNIQUE KEY uq_user_identities_provider_subject (provider, provider_subject),
+      INDEX idx_user_identities_user_id (user_id)
+    )
+  `);
+
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS roles (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(64) NOT NULL,
+      created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL,
+      UNIQUE KEY uq_roles_name (name)
+    )
+  `);
+
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS user_roles (
+      user_id VARCHAR(36) NOT NULL,
+      role_id INT NOT NULL,
+      created_at DATETIME NOT NULL,
+      PRIMARY KEY (user_id, role_id),
+      CONSTRAINT fk_user_roles_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE,
+      CONSTRAINT fk_user_roles_role
+        FOREIGN KEY (role_id) REFERENCES roles(id)
+        ON DELETE CASCADE
+    )
+  `);
+
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      session_id VARCHAR(128) NOT NULL PRIMARY KEY,
+      expires BIGINT UNSIGNED NOT NULL,
+      data MEDIUMTEXT NULL,
+      INDEX idx_user_sessions_expires (expires)
+    )
+  `);
+
+  const now = new Date();
+  for (const roleName of ['admin', 'querier', 'viewer']) {
+    await pool.execute(
+      `
+        INSERT INTO roles (name, created_at, updated_at)
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE updated_at = VALUES(updated_at)
+      `,
+      [roleName, now, now]
+    );
+  }
+
+  await pool.execute(`
     CREATE TABLE IF NOT EXISTS queries (
       id VARCHAR(36) PRIMARY KEY,
       name VARCHAR(255) NOT NULL,
+      created_by_user_id VARCHAR(36) NULL,
       database_name VARCHAR(255) NULL,
       query_text TEXT NOT NULL,
       athena_query_execution_id VARCHAR(128) NOT NULL,
@@ -30,7 +111,11 @@ async function initSchema(pool, options = {}) {
       cancelled_at DATETIME NULL,
       result_path TEXT NULL,
       result_received_at DATETIME NULL,
-      error_message TEXT NULL
+      error_message TEXT NULL,
+      CONSTRAINT fk_queries_created_by_user
+        FOREIGN KEY (created_by_user_id) REFERENCES users(id)
+        ON DELETE SET NULL,
+      INDEX idx_queries_created_by_user_id (created_by_user_id)
     )
   `);
 
@@ -73,6 +158,24 @@ async function initSchema(pool, options = {}) {
     await pool.execute(`
       ALTER TABLE queries
       ADD COLUMN database_name VARCHAR(255) NULL
+    `);
+  }
+
+  const [createdByUserColumnRows] = await pool.execute(
+    `
+      SELECT COUNT(*) AS column_count
+      FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'queries'
+        AND column_name = 'created_by_user_id'
+    `
+  );
+
+  const hasCreatedByUserColumn = Number(createdByUserColumnRows[0]?.column_count || 0) > 0;
+  if (!hasCreatedByUserColumn) {
+    await pool.execute(`
+      ALTER TABLE queries
+      ADD COLUMN created_by_user_id VARCHAR(36) NULL
     `);
   }
 

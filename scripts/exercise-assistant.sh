@@ -4,6 +4,8 @@ set -u -o pipefail
 BASE_URL="${1:-http://localhost:3000}"
 ASSISTANT_PROMPT="${ASSISTANT_PROMPT:-Give me a SQL query that gives me the current date time}"
 QUERY_SQL="${QUERY_SQL:-}"
+COOKIE_JAR="${COOKIE_JAR:-}"
+COOKIE_HEADER="${COOKIE_HEADER:-}"
 CREATE_QUERY_SQL="$QUERY_SQL"
 if [[ -z "${CREATE_QUERY_SQL// }" ]]; then
   CREATE_QUERY_SQL="SELECT 1"
@@ -27,13 +29,20 @@ request() {
   local body="${3:-}"
   local tmp
   local timestamp
+  local curl_args=()
 
   timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   tmp=$(mktemp)
+  if [[ -n "$COOKIE_JAR" ]]; then
+    curl_args+=(-b "$COOKIE_JAR" -c "$COOKIE_JAR")
+  fi
+  if [[ -n "$COOKIE_HEADER" ]]; then
+    curl_args+=(-H "Cookie: $COOKIE_HEADER")
+  fi
   if [[ -n "$body" ]]; then
-    LAST_STATUS=$(curl -sS -o "$tmp" -w '%{http_code}' -X "$method" "$url" -H 'Content-Type: application/json' -d "$body")
+    LAST_STATUS=$(curl -sS -o "$tmp" -w '%{http_code}' -X "$method" "$url" "${curl_args[@]}" -H 'Content-Type: application/json' -d "$body")
   else
-    LAST_STATUS=$(curl -sS -o "$tmp" -w '%{http_code}' -X "$method" "$url")
+    LAST_STATUS=$(curl -sS -o "$tmp" -w '%{http_code}' -X "$method" "$url" "${curl_args[@]}")
   fi
   LAST_BODY=$(cat "$tmp")
   rm -f "$tmp"
@@ -144,6 +153,9 @@ echo "Assistant exercise log: $LOG_FILE"
 } >>"$LOG_FILE"
 
 echo "Running assistant exercise against $BASE_URL"
+if [[ -z "$COOKIE_JAR" && -z "$COOKIE_HEADER" ]]; then
+  echo "WARNING: no COOKIE_JAR or COOKIE_HEADER configured; authenticated endpoints will return 401 once auth is enabled." >&2
+fi
 
 request GET "$BASE_URL/health"
 assert_status 200 "health endpoint"

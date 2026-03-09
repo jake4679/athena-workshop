@@ -9,8 +9,11 @@ const { AssistantStore } = require('./services/assistantStore');
 const { AthenaService } = require('./services/athenaService');
 const { AssistantService } = require('./services/assistantService');
 const { LockManager } = require('./services/lockManager');
+const { UserStore } = require('./services/userStore');
+const { AuthService } = require('./services/authService');
 const { createServices } = require('./services/appServices');
 const { buildApp } = require('./app');
+const { createSessionMiddleware } = require('./auth/session');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -140,9 +143,16 @@ async function startServer() {
   const pool = await initializeDatabase(config);
 
   const queryStore = new QueryStore(pool);
+  const userStore = new UserStore(pool);
   const athenaService = new AthenaService(config);
   const lockManager = new LockManager();
   const assistantStore = new AssistantStore(pool);
+  const authService = new AuthService({
+    userStore,
+    config,
+    logger
+  });
+  await authService.initialize();
   const assistantService = new AssistantService({
     assistantStore,
     queryStore,
@@ -151,10 +161,19 @@ async function startServer() {
     config,
     logger
   });
-  const services = createServices({ queryStore, assistantService, athenaService, lockManager, logger });
+  const services = createServices({
+    queryStore,
+    userStore,
+    authService,
+    assistantService,
+    athenaService,
+    lockManager,
+    logger
+  });
   await logAwsSecurityContext(athenaService);
 
-  const app = buildApp({ services, logger });
+  const sessionMiddleware = await createSessionMiddleware({ pool, config });
+  const app = buildApp({ services, logger, sessionMiddleware });
 
   const interval = setInterval(async () => {
     try {
@@ -168,7 +187,12 @@ async function startServer() {
 
   const port = config.server.port || 3000;
   app.listen(port, () => {
-    logger.info('Server started', { port, configPath, resultsDir });
+    logger.info('Server started', {
+      port,
+      configPath,
+      resultsDir,
+      authMode: config.auth?.mode || 'oidc'
+    });
   });
 }
 

@@ -2,8 +2,11 @@ const path = require('path');
 const express = require('express');
 const { buildRouter } = require('./routes/router');
 
-function buildApp({ services, logger, staticDir = path.resolve(__dirname, '../public') }) {
+function buildApp({ services, logger, sessionMiddleware, staticDir = path.resolve(__dirname, '../public') }) {
   const app = express();
+  if (sessionMiddleware) {
+    app.use(sessionMiddleware);
+  }
   app.use(express.json());
   app.use(express.static(staticDir));
 

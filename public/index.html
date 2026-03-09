@@ -1035,7 +1035,10 @@
           <p>Run SQL, inspect schemas, iterate with the assistant, and move between saved runs without leaving the page.</p>
         </div>
         <div class="topbar-actions">
+          <div id="authSummary" class="kbd-hint">Signed out</div>
           <div class="kbd-hint">Submit: Cmd/Ctrl+Enter</div>
+          <button id="loginBtn" class="btn-light" type="button">Sign In</button>
+          <button id="logoutBtn" class="btn-light" type="button" hidden>Sign Out</button>
           <button id="themeToggleBtn" class="btn-light theme-toggle" type="button">Switch to Dark Mode</button>
         </div>
       </section>
@@ -1297,6 +1300,9 @@
       };
       let tabularInteractionListenerAttached = false;
       let completionProviderRegistered = false;
+      let currentUser = null;
+      let currentRoles = [];
+      let authMode = 'oidc';
       const VALIDATION_DEBOUNCE_MS = 650;
       const UI_STATE_STORAGE_KEY = 'athena_query_console_ui_state_v1';
       const THEME_STORAGE_KEY = 'athena_query_console_theme_v1';
@@ -1311,6 +1317,9 @@
 
       const bodyEl = document.body;
       const themeToggleBtn = document.getElementById('themeToggleBtn');
+      const authSummaryEl = document.getElementById('authSummary');
+      const loginBtn = document.getElementById('loginBtn');
+      const logoutBtn = document.getElementById('logoutBtn');
       const appLayoutEl = document.getElementById('appLayout');
       const heroCardEl = document.getElementById('heroCard');
       const statusEl = document.getElementById('status');
@@ -2042,12 +2051,41 @@
       async function apiRequest(url, method, body) {
         const response = await fetch(url, {
           method,
+          credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: body ? JSON.stringify(body) : undefined
         });
 
         const json = await response.json().catch(() => ({}));
         return { ok: response.ok, status: response.status, json };
+      }
+
+      function renderAuthState() {
+        if (!currentUser) {
+          authSummaryEl.textContent = 'Signed out';
+          loginBtn.hidden = false;
+          logoutBtn.hidden = true;
+          return;
+        }
+
+        const roleLabel = currentRoles.length > 0 ? currentRoles.join(', ') : 'no roles';
+        const modeLabel = authMode === 'disabled' ? ' | dev auth bypass' : '';
+        authSummaryEl.textContent = `${currentUser.email || currentUser.id} | ${roleLabel}${modeLabel}`;
+        loginBtn.hidden = authMode === 'disabled';
+        logoutBtn.hidden = false;
+      }
+
+      async function loadAuthState() {
+        const res = await apiRequest('/auth/me', 'GET');
+        if (!res.ok) {
+          throw new Error(`Auth lookup failed (${res.status})`);
+        }
+
+        currentUser = res.json.authenticated ? res.json.user : null;
+        currentRoles = Array.isArray(res.json.roles) ? res.json.roles : [];
+        authMode = res.json.mode || 'oidc';
+        renderAuthState();
+        return res.json;
       }
 
       function buildCompletionSuggestions(monacoApi, position, model) {
@@ -2532,7 +2570,8 @@
       }
 
       async function refreshQueryList(preferSelectId) {
-        const res = await apiRequest('/query', 'GET');
+        const queryUrl = currentUser ? `/query?userId=${encodeURIComponent(currentUser.id)}` : '/query';
+        const res = await apiRequest(queryUrl, 'GET');
         if (!res.ok) {
           renderStatus(`Failed to refresh query list (${res.status})`, true);
           return;
@@ -3257,6 +3296,22 @@
         renderStatus(`Copied ${getBuddyLabel()} response into query editor.`, false);
       });
 
+      loginBtn.addEventListener('click', () => {
+        window.location.href = '/auth/login/google';
+      });
+
+      logoutBtn.addEventListener('click', async () => {
+        try {
+          const res = await apiRequest('/auth/logout', 'POST', {});
+          if (!res.ok) {
+            throw new Error(`Logout failed (${res.status})`);
+          }
+          window.location.reload();
+        } catch (error) {
+          renderStatus(error.message, true);
+        }
+      });
+
       window.addEventListener('beforeunload', () => {
         clearPolling();
         clearAssistantStatusPolling();
@@ -3272,12 +3327,21 @@
       });
 
       async function initializeAppState() {
+        const auth = await loadAuthState();
+        if (!auth.authenticated) {
+          renderStatus('Sign in with Google to load Athena data and queries.', false);
+          renderQueryList([]);
+          schemaTreeEl.innerHTML = '<div class="meta-value">Sign in to browse Athena metadata.</div>';
+          return false;
+        }
+
         await refreshDatabasesWithRetry(selectedDatabase);
         await refreshSchemaTree();
         await refreshQueryList(selectedQueryId);
         if (selectedQueryId) {
           await loadQueryById(selectedQueryId);
         }
+        return true;
       }
 
       function startQueryListAutoRefresh() {
@@ -3319,8 +3383,10 @@
           });
           scheduleValidation();
           initializeAppState()
-            .then(async () => {
-              startQueryListAutoRefresh();
+            .then(async (authenticated) => {
+              if (authenticated) {
+                startQueryListAutoRefresh();
+              }
             })
             .catch((error) => {
               renderStatus(`Failed to initialize app state: ${error.message}`, true);
@@ -3342,8 +3408,10 @@
           updateAssistantLabels();
           setAssistantRunStatus('IDLE', null);
           initializeAppState()
-            .then(async () => {
-              startQueryListAutoRefresh();
+            .then(async (authenticated) => {
+              if (authenticated) {
+                startQueryListAutoRefresh();
+              }
             })
             .catch((error) => {
               renderStatus(`Failed to initialize app state: ${error.message}`, true);
