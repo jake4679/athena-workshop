@@ -26,7 +26,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - `GET /query/:id/assistant/status`: return assistant run state metadata for a query.
 - `POST /query/:id/assistant/cancel`: request cancellation of active assistant run for a query.
 - `POST /query/:id/assistant/compact`: compact conversation into a new session (`mode: empty|summarize`).
-- `GET /query/:id/assistant/messages`: return persisted assistant conversation messages for a query.
+- `GET /query/:id/assistant/messages`: return persisted assistant conversation messages for a query across the query's assistant sessions; compaction summaries remain part of the visible conversation.
 - `GET /users`: list users (admin only).
 - `GET /users/:id`: fetch a specific user (self or admin).
 - `PUT /users/:id`: update a specific user profile.
@@ -47,6 +47,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Assistant cancellation is best-effort and should transition running sessions to cancelling/idle states.
 - Assistant status should include cumulative token usage for the current provider session.
 - Assistant compact should reject while a run is active; summarize compact should carry forward a summary into the new session.
+- Assistant message history remains visible across compacted sessions for the same query; summarize compact adds its summary as part of the visible conversation.
 - Assistant provider calls (OpenAI/Anthropic) do not use a local backend timeout; runs complete when response returns or are cancelled/failed.
 - Any Google account may authenticate; local users are auto-created on first successful login.
 - Session-backed auth uses MySQL persistence; disabled users lose access on their next request.

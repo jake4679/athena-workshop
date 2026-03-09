@@ -977,7 +977,7 @@ class AssistantService {
       };
     }
 
-    const messages = await this.assistantStore.listMessagesBySessionId(session.id);
+    const messages = await this.assistantStore.listMessagesByQueryId(queryId);
     return {
       queryId,
       provider: this.providerName,

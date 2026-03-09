@@ -45,6 +45,7 @@ function fromMessageRow(row) {
   return {
     id: row.id,
     sessionId: row.session_id,
+    queryId: row.query_id || null,
     role: row.role,
     content: row.content,
     contentType: row.content_type,
@@ -267,11 +268,15 @@ class AssistantStore {
   }
 
   async listMessagesByQueryId(queryId) {
-    const session = await this.getSessionByQueryId(queryId);
-    if (!session) {
-      return [];
-    }
-    return this.listMessagesBySessionId(session.id);
+    const [rows] = await this.pool.execute(
+      `SELECT assistant_messages.*, assistant_sessions.query_id
+      FROM assistant_messages
+      INNER JOIN assistant_sessions ON assistant_sessions.id = assistant_messages.session_id
+      WHERE assistant_sessions.query_id = ?
+      ORDER BY assistant_sessions.created_at ASC, assistant_messages.created_at ASC, assistant_messages.id ASC`,
+      [queryId]
+    );
+    return rows.map(fromMessageRow);
   }
 
   async countMessages(sessionId) {
