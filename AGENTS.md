@@ -145,7 +145,9 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Assistant tool-loop ceiling is configurable via `assistant.maxToolRounds` (default `1000`), with cancellation expected via assistant cancel endpoint/UI when needed.
 - Assistant tools include `run_read_query` for bounded read sampling (parser-guarded SELECT-only execution, max 500 rows, max 5 calls per run, capped columns, audit logging).
 - Static frontend served from `/` with Monaco SQL editor, SQL format action, submit, polling, and results view.
-- Frontend top bar includes sign-in/sign-out state via `/auth/me` and Google login/logout flows.
+- Frontend loads to a dedicated dark-mode login screen when `/auth/me` reports the user is unauthenticated, then shows the main app shell after successful sign-in.
+- Login screen includes placeholder username/password fields plus a `Log In With Google` action for real authentication.
+- Main app top bar shows current-user/role summary plus sign-out control; Google sign-in is only shown on the dedicated login screen.
 - Frontend query list requests `GET /query?userId=<current-user-id>` so the visible list remains scoped to the authenticated user even though broader read access exists in the backend.
 - Frontend uses a refreshed glass-panel layout with responsive cards, higher-contrast controls, and persisted light/dark theme switching.
 - General action buttons use a compact size, while sidebar collapse toggles remain larger.

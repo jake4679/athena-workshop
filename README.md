@@ -209,8 +209,10 @@ SELECT * FROM queries LIMIT 10;
 
 ## Frontend
 - `GET /` serves a minimal HTML page with:
-- Google sign-in/sign-out controls and current-user/role summary sourced from `/auth/me`
-- When `auth.mode = "disabled"`, the frontend shows the configured dev user and hides the Google sign-in button
+- A dedicated dark-mode login screen when `/auth/me` reports the user is unauthenticated
+- The login screen includes placeholder username/password inputs plus a `Log In With Google` social-login action for actual authentication
+- The main app shell after successful sign-in, with current-user/role summary and sign-out control sourced from `/auth/me`
+- When `auth.mode = "disabled"`, the frontend bypasses the login screen and loads directly into the configured dev user session
 - Refreshed glass-panel UI with responsive card layout and higher-contrast controls
 - General action buttons use a compact size, while sidebar collapse toggles remain larger
 - Main shell stretches to the full browser width with narrow outer gutters
