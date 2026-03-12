@@ -179,6 +179,7 @@ SELECT * FROM queries LIMIT 10;
 - `POST /query/validate` body: `{ "query": "SELECT ...", "database": "my_db" }` (database optional; Athena-backed syntax validation)
 - `POST /query` body: `{ "query": "SELECT ...", "database": "my_db" }` (database optional)
 - `GET /query` and `GET /query?userId=<user-id>`
+- Query deep link: `/?query=<query-id>` loads that query into the UI for an authenticated user with access
 - `PUT /query/:id` body: `{ "name": "Friendly name", "query": "SELECT ...", "database": "my_db" }` (any provided field is updated)
 - `DELETE /query/:id` (removes query metadata and any local stored results)
 - `GET /query/:id/status`
@@ -253,6 +254,8 @@ SELECT * FROM queries LIMIT 10;
 - Results panel includes full-results download controls with format selection (CSV, Excel, Parquet)
 - Right-side query list (`/query`) with click-to-load query text and available results
 - Right-side query list uses `GET /query?userId=<current-user-id>` so the visible list remains scoped to the signed-in user
+- Selected query is mirrored into the browser URL as `?query=<query-id>` for shareable deep links
+- Deep-linked accessible queries load even when they are outside the signed-in user's filtered query list, and the sidebar shows them as `Shared`
 - Right-side query list includes delete action for selected query
 - Query metadata includes editable `name` value from backend (defaulted to query ID on create)
 - Left-side collapsible Athena schema tree (tables -> columns with data types)

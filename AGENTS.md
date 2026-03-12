@@ -14,6 +14,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - `POST /query`: submit query from JSON body (`query`, optional `database`), generate and return identifier.
 - `POST /query/validate`: validate SQL syntax using Athena `EXPLAIN` from JSON body (`query`, optional `database`); returns markers suitable for editor diagnostics.
 - `GET /query`: list all queries and their metadata.
+- `GET /?query=<query-id>` on the frontend should deep-link the UI to a selected query for any authenticated user with access.
 - `PUT /query/:id`: update query `name`, query body (`query`), and/or selected database (`database`).
 - `DELETE /query/:id`: delete query metadata and any local downloaded results.
 - `GET /query/:id/status`: return query state and metadata.
@@ -56,6 +57,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - `querier` owns query mutation and assistant-send operations.
 - `viewer` can read all queries, download results, and read assistant conversations.
 - Query list supports optional `userId` filtering; the frontend initially requests only the authenticated user’s queries.
+- Frontend mirrors the selected query into the browser URL as `?query=<query-id>` and should load deep-linked accessible queries even if they fall outside the signed-in user’s filtered query list, marking them as shared in the sidebar.
 - Assistant `run_read_query` tool safeguards:
   - read-only SQL verification via backend parser/tokenizer guard
   - `TRUNCATE(...)` numeric function usage is allowed for read queries; destructive `TRUNCATE TABLE`/statement usage remains blocked
@@ -152,6 +154,8 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Login screen includes placeholder username/password fields plus a `Log In With Google` action for real authentication.
 - Main app top bar shows current-user/role summary plus sign-out control; Google sign-in is only shown on the dedicated login screen.
 - Frontend query list requests `GET /query?userId=<current-user-id>` so the visible list remains scoped to the authenticated user even though broader read access exists in the backend.
+- Frontend keeps the selected query in the browser URL for shareable deep links and restores query selection from `?query=<query-id>` on load/back-forward navigation.
+- Frontend can load an accessible deep-linked query outside the signed-in user's filtered query list and surfaces it in the sidebar as a shared item.
 - Frontend uses a refreshed glass-panel layout with responsive cards, higher-contrast controls, and persisted light/dark theme switching.
 - General action buttons use a compact size, while sidebar collapse toggles remain larger.
 - Frontend shell spans the full browser width with narrow outer gutters, and the SQL editor card is collapsible like the other major panels.

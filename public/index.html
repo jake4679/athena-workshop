@@ -1449,6 +1449,8 @@
       let currentUser = null;
       let currentRoles = [];
       let authMode = 'oidc';
+      let selectedQueryListEntry = null;
+      let queryListEntries = [];
       const VALIDATION_DEBOUNCE_MS = 650;
       const UI_STATE_STORAGE_KEY = 'athena_query_console_ui_state_v1';
       const THEME_STORAGE_KEY = 'athena_query_console_theme_v1';
@@ -2393,6 +2395,26 @@
         return `${id.slice(0, 8)}...${id.slice(-4)}`;
       }
 
+      function getQueryIdFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        const value = String(params.get('query') || '').trim();
+        return value || null;
+      }
+
+      function updateUrlForSelectedQuery(queryId, options = {}) {
+        const params = new URLSearchParams(window.location.search);
+        if (queryId) {
+          params.set('query', queryId);
+        } else {
+          params.delete('query');
+        }
+
+        const nextSearch = params.toString();
+        const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash || ''}`;
+        const historyMethod = options.history === 'push' ? 'pushState' : 'replaceState';
+        window.history[historyMethod]({ queryId: queryId || null }, '', nextUrl);
+      }
+
       function setSchemaCollapsed(nextCollapsed) {
         schemaCollapsed = Boolean(nextCollapsed);
         appLayoutEl.classList.toggle('left-collapsed', schemaCollapsed);
@@ -2655,9 +2677,15 @@
         await Promise.all(workers);
       }
 
-      function setSelectedQuery(id) {
+      function setSelectedQuery(id, options = {}) {
         selectedQueryId = id;
+        if (!id) {
+          selectedQueryListEntry = null;
+        }
         persistUiState();
+        if (options.updateUrl !== false) {
+          updateUrlForSelectedQuery(id, { history: options.history || 'replace' });
+        }
       }
 
       function persistUiState() {
@@ -2706,16 +2734,34 @@
         } catch (_error) {
           // ignore malformed state
         }
+
+        const queryIdFromUrl = getQueryIdFromUrl();
+        if (queryIdFromUrl) {
+          selectedQueryId = queryIdFromUrl;
+        }
       }
 
       function renderQueryList(queries) {
         queryListItemsEl.innerHTML = '';
-        if (!Array.isArray(queries) || queries.length === 0) {
+        const items = Array.isArray(queries) ? queries.slice() : [];
+        const hasSelectedInList =
+          selectedQueryId && items.some((query) => query && query.id === selectedQueryId);
+
+        if (selectedQueryId && selectedQueryListEntry && !hasSelectedInList) {
+          items.unshift({
+            id: selectedQueryListEntry.id,
+            name: selectedQueryListEntry.name || selectedQueryListEntry.id,
+            status: selectedQueryListEntry.status || 'UNKNOWN',
+            shared: true
+          });
+        }
+
+        if (items.length === 0) {
           queryListItemsEl.innerHTML = '<div class="meta-value">No queries yet.</div>';
           return;
         }
 
-        queries.forEach((query) => {
+        items.forEach((query) => {
           const item = document.createElement('button');
           item.type = 'button';
           item.className = 'query-item';
@@ -2724,7 +2770,7 @@
           }
           item.innerHTML =
             `<div class="query-item-id">${escapeHtml(query.name || query.id)}</div>` +
-            `<div class="query-item-meta">${escapeHtml(query.status || 'UNKNOWN')} | ${escapeHtml(shortId(query.id))}</div>`;
+            `<div class="query-item-meta">${escapeHtml(query.status || 'UNKNOWN')}${query.shared ? ' | Shared' : ''} | ${escapeHtml(shortId(query.id))}</div>`;
           item.addEventListener('click', () => {
             loadQueryById(query.id).catch((error) => {
               renderStatus(`Failed to load query ${query.id}: ${error.message}`, true);
@@ -2734,7 +2780,7 @@
         });
       }
 
-      async function refreshQueryList(preferSelectId) {
+      async function refreshQueryList(preferSelectId, options = {}) {
         const queryUrl = currentUser ? `/query?userId=${encodeURIComponent(currentUser.id)}` : '/query';
         const res = await apiRequest(queryUrl, 'GET');
         if (!res.ok) {
@@ -2743,13 +2789,16 @@
         }
 
         const queries = Array.isArray(res.json.queries) ? res.json.queries : [];
+        queryListEntries = queries.slice();
         if (preferSelectId) {
-          setSelectedQuery(preferSelectId);
+          setSelectedQuery(preferSelectId, { history: options.history || 'replace' });
         } else if (selectedQueryId && !queries.find((q) => q.id === selectedQueryId)) {
-          setSelectedQuery(null);
-          syncAssistantForQuery(null).catch(() => {
-            // ignore assistant reset failures
-          });
+          if (!options.preserveMissingSelection) {
+            setSelectedQuery(null, { history: options.history || 'replace' });
+            syncAssistantForQuery(null).catch(() => {
+              // ignore assistant reset failures
+            });
+          }
         }
 
         renderQueryList(queries);
@@ -2973,18 +3022,29 @@
         }
       }
 
-      async function loadQueryById(id) {
-        setSelectedQuery(id);
-        await refreshQueryList(id);
+      async function loadQueryById(id, options = {}) {
+        setSelectedQuery(id, { history: options.history || 'push' });
+        await refreshQueryList(id, { preserveMissingSelection: true, history: 'replace' });
         await syncAssistantForQuery(id);
 
         const statusRes = await apiRequest(`/query/${id}/status`, 'GET');
         if (!statusRes.ok) {
+          if (statusRes.status === 404) {
+            selectedQueryListEntry = null;
+            setSelectedQuery(null, { history: 'replace' });
+            await refreshQueryList(null, { history: 'replace' });
+          }
           renderStatus(`Failed to load query status (${statusRes.status})`, true);
           return;
         }
 
         const query = statusRes.json;
+        selectedQueryListEntry = {
+          id: query.id || id,
+          name: query.name || id,
+          status: query.status || 'UNKNOWN'
+        };
+        renderQueryList(queryListEntries);
         if (query.database && query.database !== selectedDatabase) {
           selectedDatabase = query.database;
           renderDatabaseOptions(databaseList);
@@ -3207,10 +3267,10 @@
             }
 
             const id = createRes.json.id;
-            setSelectedQuery(id);
+            setSelectedQuery(id, { history: 'push' });
             renderStatus(`Query submitted: ${id}`);
             renderJson({ message: `Query ${id} submitted. Waiting for results...` });
-            await refreshQueryList(id);
+            await refreshQueryList(id, { preserveMissingSelection: true, history: 'replace' });
             await syncAssistantForQuery(id);
             startPolling(id);
             return;
@@ -3244,7 +3304,7 @@
 
           renderStatus(`Query updated and refreshed: ${selectedQueryId}`);
           renderJson({ message: `Query ${selectedQueryId} refreshed. Waiting for results...` });
-          await refreshQueryList(selectedQueryId);
+          await refreshQueryList(selectedQueryId, { preserveMissingSelection: true, history: 'replace' });
           startPolling(selectedQueryId);
         } catch (err) {
           renderStatus(`Submit error: ${err.message}`, true);
@@ -3497,6 +3557,26 @@
         }
       });
 
+      window.addEventListener('popstate', () => {
+        const queryIdFromUrl = getQueryIdFromUrl();
+        if (!currentUser) {
+          selectedQueryId = queryIdFromUrl;
+          return;
+        }
+        if (queryIdFromUrl) {
+          loadQueryById(queryIdFromUrl, { history: 'replace' }).catch((error) => {
+            renderStatus(`Failed to load query ${queryIdFromUrl}: ${error.message}`, true);
+          });
+          return;
+        }
+
+        clearPolling();
+        clearSelectedQueryView();
+        refreshQueryList(null, { history: 'replace' }).catch((error) => {
+          renderStatus(`Failed to refresh query list: ${error.message}`, true);
+        });
+      });
+
       async function initializeAppState() {
         const auth = await loadAuthState();
         if (!auth.authenticated) {
@@ -3507,9 +3587,9 @@
 
         await refreshDatabasesWithRetry(selectedDatabase);
         await refreshSchemaTree();
-        await refreshQueryList(selectedQueryId);
+        await refreshQueryList(selectedQueryId, { preserveMissingSelection: true, history: 'replace' });
         if (selectedQueryId) {
-          await loadQueryById(selectedQueryId);
+          await loadQueryById(selectedQueryId, { history: 'replace' });
         }
         return true;
       }
