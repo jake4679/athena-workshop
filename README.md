@@ -253,9 +253,9 @@ SELECT * FROM queries LIMIT 10;
 - Tabular result rows support click-to-select highlighting (Tabulator and fallback HTML table)
 - Results panel includes full-results download controls with format selection (CSV, Excel, Parquet)
 - Right-side query list (`/query`) with click-to-load query text and available results
-- Right-side query list uses `GET /query?userId=<current-user-id>` so the visible list remains scoped to the signed-in user
+- Right-side query list includes a `Mine` / `All` scope filter; `Mine` uses `GET /query?userId=<current-user-id>` and `All` uses `GET /query`
 - Selected query is mirrored into the browser URL as `?query=<query-id>` for shareable deep links
-- Deep-linked accessible queries load even when they are outside the signed-in user's filtered query list, and the sidebar shows them as `Shared`
+- Deep-linked accessible queries load into the UI even if they are outside the current query-list filter, but they are not injected into the saved-query list
 - Right-side query list includes delete action for selected query
 - Query metadata includes editable `name` value from backend (defaulted to query ID on create)
 - Left-side collapsible Athena schema tree (tables -> columns with data types)

@@ -1384,6 +1384,10 @@
               </button>
             </div>
             <div class="query-list-controls">
+              <select id="queryScopeSelect" class="database-select" aria-label="Query scope filter">
+                <option value="mine">Mine</option>
+                <option value="all">All</option>
+              </select>
               <button id="deleteQueryBtn" class="btn-light query-list-delete" type="button">Delete Selected</button>
               <button id="refreshListBtn" class="btn-light query-list-refresh" type="button">Refresh List</button>
             </div>
@@ -1449,8 +1453,8 @@
       let currentUser = null;
       let currentRoles = [];
       let authMode = 'oidc';
-      let selectedQueryListEntry = null;
       let queryListEntries = [];
+      let queryScope = 'mine';
       const VALIDATION_DEBOUNCE_MS = 650;
       const UI_STATE_STORAGE_KEY = 'athena_query_console_ui_state_v1';
       const THEME_STORAGE_KEY = 'athena_query_console_theme_v1';
@@ -1496,6 +1500,7 @@
       const refreshListBtn = document.getElementById('refreshListBtn');
       const deleteQueryBtn = document.getElementById('deleteQueryBtn');
       const toggleQueryListBtn = document.getElementById('toggleQueryListBtn');
+      const queryScopeSelectEl = document.getElementById('queryScopeSelect');
       const assistantCardEl = document.getElementById('assistantCard');
       const assistantTitleEl = document.getElementById('assistantTitle');
       const toggleAssistantBtn = document.getElementById('toggleAssistantBtn');
@@ -2679,9 +2684,6 @@
 
       function setSelectedQuery(id, options = {}) {
         selectedQueryId = id;
-        if (!id) {
-          selectedQueryListEntry = null;
-        }
         persistUiState();
         if (options.updateUrl !== false) {
           updateUrlForSelectedQuery(id, { history: options.history || 'replace' });
@@ -2698,7 +2700,8 @@
               assistantCollapsed,
               editorCollapsed,
               selectedQueryId,
-              selectedDatabase
+              selectedDatabase,
+              queryScope
             })
           );
         } catch (_error) {
@@ -2731,6 +2734,9 @@
           if (typeof state.selectedDatabase === 'string' && state.selectedDatabase.trim() !== '') {
             selectedDatabase = state.selectedDatabase;
           }
+          if (state.queryScope === 'mine' || state.queryScope === 'all') {
+            queryScope = state.queryScope;
+          }
         } catch (_error) {
           // ignore malformed state
         }
@@ -2744,17 +2750,6 @@
       function renderQueryList(queries) {
         queryListItemsEl.innerHTML = '';
         const items = Array.isArray(queries) ? queries.slice() : [];
-        const hasSelectedInList =
-          selectedQueryId && items.some((query) => query && query.id === selectedQueryId);
-
-        if (selectedQueryId && selectedQueryListEntry && !hasSelectedInList) {
-          items.unshift({
-            id: selectedQueryListEntry.id,
-            name: selectedQueryListEntry.name || selectedQueryListEntry.id,
-            status: selectedQueryListEntry.status || 'UNKNOWN',
-            shared: true
-          });
-        }
 
         if (items.length === 0) {
           queryListItemsEl.innerHTML = '<div class="meta-value">No queries yet.</div>';
@@ -2770,7 +2765,7 @@
           }
           item.innerHTML =
             `<div class="query-item-id">${escapeHtml(query.name || query.id)}</div>` +
-            `<div class="query-item-meta">${escapeHtml(query.status || 'UNKNOWN')}${query.shared ? ' | Shared' : ''} | ${escapeHtml(shortId(query.id))}</div>`;
+            `<div class="query-item-meta">${escapeHtml(query.status || 'UNKNOWN')} | ${escapeHtml(shortId(query.id))}</div>`;
           item.addEventListener('click', () => {
             loadQueryById(query.id).catch((error) => {
               renderStatus(`Failed to load query ${query.id}: ${error.message}`, true);
@@ -2781,7 +2776,10 @@
       }
 
       async function refreshQueryList(preferSelectId, options = {}) {
-        const queryUrl = currentUser ? `/query?userId=${encodeURIComponent(currentUser.id)}` : '/query';
+        let queryUrl = '/query';
+        if (queryScope === 'mine' && currentUser) {
+          queryUrl = `/query?userId=${encodeURIComponent(currentUser.id)}`;
+        }
         const res = await apiRequest(queryUrl, 'GET');
         if (!res.ok) {
           renderStatus(`Failed to refresh query list (${res.status})`, true);
@@ -3030,7 +3028,6 @@
         const statusRes = await apiRequest(`/query/${id}/status`, 'GET');
         if (!statusRes.ok) {
           if (statusRes.status === 404) {
-            selectedQueryListEntry = null;
             setSelectedQuery(null, { history: 'replace' });
             await refreshQueryList(null, { history: 'replace' });
           }
@@ -3039,11 +3036,6 @@
         }
 
         const query = statusRes.json;
-        selectedQueryListEntry = {
-          id: query.id || id,
-          name: query.name || id,
-          status: query.status || 'UNKNOWN'
-        };
         renderQueryList(queryListEntries);
         if (query.database && query.database !== selectedDatabase) {
           selectedDatabase = query.database;
@@ -3342,6 +3334,15 @@
         });
       });
 
+      queryScopeSelectEl.addEventListener('change', () => {
+        const nextScope = String(queryScopeSelectEl.value || 'mine').trim().toLowerCase();
+        queryScope = nextScope === 'all' ? 'all' : 'mine';
+        persistUiState();
+        refreshQueryList(selectedQueryId, { preserveMissingSelection: true, history: 'replace' }).catch((error) => {
+          renderStatus(`Failed to refresh query list: ${error.message}`, true);
+        });
+      });
+
       deleteQueryBtn.addEventListener('click', () => {
         if (!selectedQueryId) {
           renderStatus('Select a query to delete.', true);
@@ -3621,6 +3622,7 @@
             domReadOnly: false
           });
           restoreUiState();
+          queryScopeSelectEl.value = queryScope;
           setSchemaCollapsed(schemaCollapsed);
           setQueryListCollapsed(queryListCollapsed);
           setAssistantCollapsed(assistantCollapsed);
@@ -3651,6 +3653,7 @@
         try {
           enableFallbackEditor('SELECT current_timestamp AS ts;');
           restoreUiState();
+          queryScopeSelectEl.value = queryScope;
           setSchemaCollapsed(schemaCollapsed);
           setQueryListCollapsed(queryListCollapsed);
           setAssistantCollapsed(assistantCollapsed);
