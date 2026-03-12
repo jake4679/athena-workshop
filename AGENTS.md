@@ -16,7 +16,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - `GET /query`: list all queries and their metadata.
 - `GET /?query=<query-id>` on the frontend should deep-link the UI to a selected query for any authenticated user with access.
 - `PUT /query/:id`: update query `name`, query body (`query`), and/or selected database (`database`).
-- `DELETE /query/:id`: delete query metadata and any local downloaded results.
+- `DELETE /query/:id`: delete query metadata and the local query result/tool-artifact directory tree.
 - `GET /query/:id/status`: return query state and metadata.
 - `GET /query/:id/results`: return results and timestamp when available.
 - `GET /query/:id/results/download`: download full query results in `csv`, `excel`/`xlsx`, or `parquet` format.
@@ -65,6 +65,9 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
   - max 5 tool executions per assistant run
   - optional result column cap (`maxColumns`, up to 50)
   - audit logging of original SQL, rewritten SQL, limits, and execution stats
+- Assistant includes built-in `search_tools` for discovery of built-in and configured assistant tools.
+- Configured assistant tools execute sequentially within a single assistant run.
+- Configured assistant tools run with explicit child-process environments only; the parent server environment is not inherited.
 
 ## Storage Requirements
 - Query metadata should be stored in a minimal DB (MySQL preferred).
@@ -72,6 +75,12 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Each query stores selected Athena `database`.
 - Each query stores nullable `created_by_user_id`; legacy pre-auth rows may remain unowned.
 - Query result payloads may be large and should be stored in a project subfolder.
+- Query result cache and assistant tool artifacts should be stored under `server.resultsDir/<query-id>/`.
+- Cached result payload should live at `server.resultsDir/<query-id>/result.json`.
+- Query-scoped assistant tool folders should include:
+  - `tools/workspace/`
+  - `tools/tmp/`
+  - `tools/runs/<assistant-session-id>/<tool-call-id>/`
 - Dockerized deployments should persist MySQL data in a Docker volume and query result files in a host-mounted project folder so they survive container replacement.
 - User/auth storage uses MySQL tables:
   - `users`
@@ -102,6 +111,14 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
   - optional config-file key fallback
   - configurable `assistantSeedInstruction` for first-message session seeding
   - configurable `maxToolRounds` for assistant tool-loop ceiling (default `1000`)
+- Tool settings should be present in config (`tools` block), supporting:
+  - `tools.defaultTimeoutMs`
+  - `tools.defaultMaxCallsPerRun`
+  - optional `tools.defaultMaxStdoutBytes`
+  - optional `tools.defaultMaxStderrBytes`
+  - `tools.credentialSets` for named child-process env bundles
+  - `tools.userSupplied[*]` with `name`, `description`, optional `tags`, `inputSchema`, and `runner`
+  - `tools.userSupplied[*].runner` supporting `type = exec`, fixed `command` argv, optional `cwd`, optional `credentialSet`, optional `env`, optional `timeoutMs`, optional `maxStdoutBytes`, optional `maxStderrBytes`, optional `maxCallsPerRun`
 - Provider-specific settings should be present in config (`providers` block), including:
   - `providers.openai` (`model`, `baseURL`)
   - `providers.anthropic` (`model`, `baseURL`, `version`, `maxTokens`)
@@ -141,14 +158,15 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Athena integration using AWS SDK v3.
 - Background poller updates state and downloads results on success.
 - Per-query lock manager to avoid race conditions between poll/cancel/refresh.
-- Results stored under configured `server.resultsDir` (default: `./results`) as `<query-id>.json`.
+- Results stored under configured `server.resultsDir` (default: `./results`) as `/<query-id>/result.json`, with query-scoped assistant tool folders under `/<query-id>/tools/`.
 - JSON logger includes timestamp/level/file/line/message.
 - Config loaded from `--config <path>`.
-- Provider-agnostic assistant tool schemas are defined under `src/assistant/tools.js` and translated per provider.
+- Provider-agnostic built-in assistant tool schemas are defined under `src/assistant/tools.js`, merged with config-defined `tools.userSupplied`, and translated per provider.
 - Assistant integration supports `openai` and `anthropic` providers via `/query/:id/assistant/*` endpoints with a shared tool-call execution loop.
 - Assistant session seed instruction is configurable via `assistant.assistantSeedInstruction`.
 - Assistant tool-loop ceiling is configurable via `assistant.maxToolRounds` (default `1000`), with cancellation expected via assistant cancel endpoint/UI when needed.
-- Assistant tools include `run_read_query` for bounded read sampling (parser-guarded SELECT-only execution, max 500 rows, max 5 calls per run, capped columns, audit logging).
+- Assistant tools include built-in `search_tools`, built-in `run_read_query` for bounded read sampling (parser-guarded SELECT-only execution, max 500 rows, max 5 calls per run, capped columns, audit logging), and config-defined child-process tools from `tools.userSupplied`.
+- Config-defined assistant tools receive explicit env vars for `QUERY_DIR`, `RESULT_PATH`, `TOOL_WORKSPACE_DIR`, `TOOL_TMP_DIR`, and `TOOL_RUN_DIR`, plus configured credential/env values.
 - Static frontend served from `/` with Monaco SQL editor, SQL format action, submit, polling, and results view.
 - Frontend loads to a dedicated dark-mode login screen when `/auth/me` reports the user is unauthenticated, then shows the main app shell after successful sign-in.
 - Login screen includes placeholder username/password fields plus a `Log In With Google` action for real authentication.

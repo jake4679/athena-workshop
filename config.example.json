@@ -40,6 +40,46 @@
     "assistantSeedInstruction": "You are a SQL assistant for AWS Athena. Provide concise, practical guidance and valid Athena SQL.",
     "maxToolRounds": 1000
   },
+  "tools": {
+    "defaultTimeoutMs": 10000,
+    "defaultMaxCallsPerRun": 3,
+    "credentialSets": {
+      "logsS3": {
+        "AWS_ACCESS_KEY_ID": "",
+        "AWS_SECRET_ACCESS_KEY": "",
+        "AWS_SESSION_TOKEN": "",
+        "AWS_REGION": "us-east-1",
+        "AWS_DEFAULT_REGION": "us-east-1"
+      }
+    },
+    "userSupplied": [
+      {
+        "name": "fetch_logs",
+        "description": "Download relevant logs from S3.",
+        "tags": ["logs", "s3"],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "prefix": {
+              "type": "string"
+            }
+          },
+          "required": ["prefix"],
+          "additionalProperties": false
+        },
+        "runner": {
+          "type": "exec",
+          "command": ["node", "./scripts/tools/fetch-logs.js"],
+          "credentialSet": "logsS3",
+          "env": {
+            "LOG_BUCKET": "example-log-bucket"
+          },
+          "timeoutMs": 15000,
+          "maxCallsPerRun": 2
+        }
+      }
+    ]
+  },
   "providers": {
     "openai": {
       "model": "gpt-5",

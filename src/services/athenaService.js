@@ -12,6 +12,15 @@ const {
   GetTableMetadataCommand
 } = require('@aws-sdk/client-athena');
 
+function toSafePathSegment(value, label) {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    throw new Error(`${label} is required`);
+  }
+
+  return normalized.replace(/[^a-zA-Z0-9._-]+/g, '_');
+}
+
 class AthenaService {
   constructor(config) {
     this.client = new AthenaClient({ region: config.aws.region });
@@ -22,6 +31,65 @@ class AthenaService {
     this.resultsDir = path.resolve(process.cwd(), config.server.resultsDir);
 
     fs.mkdirSync(this.resultsDir, { recursive: true });
+  }
+
+  getQueryDirectory(queryId) {
+    return path.join(this.resultsDir, toSafePathSegment(queryId, 'query id'));
+  }
+
+  getQueryResultPath(queryId) {
+    return path.join(this.getQueryDirectory(queryId), 'result.json');
+  }
+
+  ensureQueryDirectory(queryId) {
+    const queryDir = this.getQueryDirectory(queryId);
+    fs.mkdirSync(queryDir, { recursive: true });
+    return queryDir;
+  }
+
+  ensureToolRuntimePaths(queryId, sessionId, toolCallId) {
+    const queryDir = this.ensureQueryDirectory(queryId);
+    const resultPath = this.getQueryResultPath(queryId);
+    const toolsDir = path.join(queryDir, 'tools');
+    const workspaceDir = path.join(toolsDir, 'workspace');
+    const tmpDir = path.join(toolsDir, 'tmp');
+    const runDir = path.join(
+      toolsDir,
+      'runs',
+      toSafePathSegment(sessionId, 'assistant session id'),
+      toSafePathSegment(toolCallId, 'tool call id')
+    );
+
+    [toolsDir, workspaceDir, tmpDir, runDir].forEach((dirPath) => {
+      fs.mkdirSync(dirPath, { recursive: true });
+    });
+
+    return {
+      queryDir,
+      resultPath,
+      workspaceDir,
+      tmpDir,
+      runDir
+    };
+  }
+
+  clearQueryResultArtifacts(queryId, resultPath = null) {
+    const standardResultPath = this.getQueryResultPath(queryId);
+    const candidates = [resultPath, standardResultPath].filter(Boolean);
+
+    candidates.forEach((candidate) => {
+      if (fs.existsSync(candidate)) {
+        fs.unlinkSync(candidate);
+      }
+    });
+  }
+
+  deleteQueryArtifacts(queryId, resultPath = null) {
+    this.clearQueryResultArtifacts(queryId, resultPath);
+    const queryDir = this.getQueryDirectory(queryId);
+    if (fs.existsSync(queryDir)) {
+      fs.rmSync(queryDir, { recursive: true, force: true });
+    }
   }
 
   async resolveDatabaseName(databaseName) {
@@ -111,7 +179,8 @@ class AthenaService {
       rows
     };
 
-    const filePath = path.join(this.resultsDir, `${queryId}.json`);
+    const queryDir = this.ensureQueryDirectory(queryId);
+    const filePath = path.join(queryDir, 'result.json');
     fs.writeFileSync(filePath, JSON.stringify(payload));
 
     return {

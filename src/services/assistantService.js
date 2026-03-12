@@ -1,6 +1,10 @@
+const fs = require('fs');
+const path = require('path');
+const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('node:crypto');
-const { TOOL_NAMES, assistantToolDefinitions } = require('../assistant/tools');
+const { TOOL_NAMES } = require('../assistant/tools');
+const { buildAssistantToolRegistry } = require('../assistant/toolRegistry');
 const { OpenAIProvider } = require('../assistant/providers/openaiProvider');
 const { AnthropicProvider } = require('../assistant/providers/anthropicProvider');
 const { rewriteReadQueryWithHardLimit } = require('../assistant/readQueryGuard');
@@ -194,6 +198,184 @@ function isToolLoopExceededError(error) {
   return /Assistant tool loop exceeded maximum rounds/i.test(msg);
 }
 
+function buildSearchToolEntry(tool, includeSchema) {
+  const entry = {
+    name: tool.name,
+    description: tool.description,
+    tags: Array.isArray(tool.tags) ? tool.tags : []
+  };
+
+  if (includeSchema) {
+    entry.inputSchema = tool.inputSchema;
+  }
+
+  return entry;
+}
+
+function writeArtifact(filePath, value) {
+  if (value === undefined || value === null) {
+    return;
+  }
+
+  const contents =
+    typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value, null, 2);
+  fs.writeFileSync(filePath, contents);
+}
+
+function runConfiguredToolProcess({ command, cwd, env, input, timeoutMs, maxStdoutBytes, maxStderrBytes }) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command[0], command.slice(1), {
+      cwd,
+      env,
+      shell: false,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    const stdoutChunks = [];
+    const stderrChunks = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let timedOut = false;
+    let stdoutLimitExceeded = false;
+    let stderrLimitExceeded = false;
+    let forceKillTimer = null;
+
+    function requestStop() {
+      if (!child.killed) {
+        child.kill('SIGTERM');
+      }
+
+      if (!forceKillTimer) {
+        forceKillTimer = setTimeout(() => {
+          if (!child.killed) {
+            child.kill('SIGKILL');
+          }
+        }, 1000);
+        forceKillTimer.unref();
+      }
+    }
+
+    const timeoutTimer = setTimeout(() => {
+      timedOut = true;
+      requestStop();
+    }, timeoutMs);
+    timeoutTimer.unref();
+
+    child.stdout.on('data', (chunk) => {
+      stdoutBytes += chunk.length;
+      if (maxStdoutBytes !== null && stdoutBytes > maxStdoutBytes) {
+        stdoutLimitExceeded = true;
+        requestStop();
+        return;
+      }
+      stdoutChunks.push(chunk);
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderrBytes += chunk.length;
+      if (maxStderrBytes !== null && stderrBytes > maxStderrBytes) {
+        stderrLimitExceeded = true;
+        requestStop();
+        return;
+      }
+      stderrChunks.push(chunk);
+    });
+
+    child.on('error', (error) => {
+      clearTimeout(timeoutTimer);
+      if (forceKillTimer) {
+        clearTimeout(forceKillTimer);
+      }
+      reject(error);
+    });
+
+    child.on('close', (code, signal) => {
+      clearTimeout(timeoutTimer);
+      if (forceKillTimer) {
+        clearTimeout(forceKillTimer);
+      }
+
+      const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
+      const stderr = Buffer.concat(stderrChunks).toString('utf-8');
+
+      if (timedOut) {
+        const error = new Error(`Tool timed out after ${timeoutMs}ms`);
+        error.code = 'TOOL_TIMEOUT';
+        error.stdout = stdout;
+        error.stderr = stderr;
+        error.stdoutBytes = stdoutBytes;
+        error.stderrBytes = stderrBytes;
+        reject(error);
+        return;
+      }
+
+      if (stdoutLimitExceeded) {
+        const error = new Error(`Tool stdout exceeded configured limit of ${maxStdoutBytes} bytes`);
+        error.code = 'TOOL_STDOUT_LIMIT_EXCEEDED';
+        error.stdout = stdout;
+        error.stderr = stderr;
+        error.stdoutBytes = stdoutBytes;
+        error.stderrBytes = stderrBytes;
+        reject(error);
+        return;
+      }
+
+      if (stderrLimitExceeded) {
+        const error = new Error(`Tool stderr exceeded configured limit of ${maxStderrBytes} bytes`);
+        error.code = 'TOOL_STDERR_LIMIT_EXCEEDED';
+        error.stdout = stdout;
+        error.stderr = stderr;
+        error.stdoutBytes = stdoutBytes;
+        error.stderrBytes = stderrBytes;
+        reject(error);
+        return;
+      }
+
+      if (code !== 0) {
+        const error = new Error(
+          stderr && stderr.trim() ? stderr.trim() : `Tool exited with code ${code}${signal ? ` (${signal})` : ''}`
+        );
+        error.code = 'TOOL_EXIT_NONZERO';
+        error.exitCode = code;
+        error.signal = signal;
+        error.stdout = stdout;
+        error.stderr = stderr;
+        error.stdoutBytes = stdoutBytes;
+        error.stderrBytes = stderrBytes;
+        reject(error);
+        return;
+      }
+
+      let parsedOutput;
+      try {
+        parsedOutput = JSON.parse(stdout || 'null');
+      } catch (_error) {
+        const error = new Error('Tool stdout must be valid JSON');
+        error.code = 'TOOL_INVALID_JSON';
+        error.stdout = stdout;
+        error.stderr = stderr;
+        error.stdoutBytes = stdoutBytes;
+        error.stderrBytes = stderrBytes;
+        reject(error);
+        return;
+      }
+
+      resolve({
+        exitCode: code,
+        signal,
+        stdout,
+        stderr,
+        stdoutBytes,
+        stderrBytes,
+        output: parsedOutput
+      });
+    });
+
+    child.stdin.on('error', () => {});
+    child.stdin.end(input);
+  });
+}
+
 class AssistantService {
   constructor({ assistantStore, queryStore, athenaService, lockManager, config, logger }) {
     this.assistantStore = assistantStore;
@@ -203,9 +385,12 @@ class AssistantService {
     this.logger = logger;
 
     const runtimeConfig = resolveAssistantRuntimeConfig(config);
+    const toolRegistry = buildAssistantToolRegistry(config);
     this.providerName = runtimeConfig.provider;
     this.assistantSeedInstruction = runtimeConfig.assistantSeedInstruction;
-    this.toolDefinitions = assistantToolDefinitions;
+    this.searchableTools = toolRegistry.searchableTools;
+    this.toolDefinitions = toolRegistry.toolDefinitions;
+    this.userToolsByName = toolRegistry.userToolsByName;
     this.maxToolRounds = Math.max(1, Number(config.assistant?.maxToolRounds || DEFAULT_MAX_TOOL_ROUNDS));
 
     if (this.providerName === 'openai') {
@@ -390,6 +575,135 @@ class AssistantService {
     return summary;
   }
 
+  searchTools(args = {}) {
+    const query = typeof args?.query === 'string' ? args.query.trim().toLowerCase() : '';
+    const includeSchema = Boolean(args?.includeSchema);
+    const requestedLimit =
+      args?.limit === undefined || args?.limit === null || args?.limit === ''
+        ? 20
+        : Math.max(1, Math.min(100, Number(args.limit) || 20));
+
+    const matchingTools = this.searchableTools.filter((tool) => {
+      if (!query) {
+        return true;
+      }
+
+      const haystack = [tool.name, tool.description].concat(Array.isArray(tool.tags) ? tool.tags : []);
+      return haystack.some((value) => String(value || '').toLowerCase().includes(query));
+    });
+
+    return {
+      totalTools: this.searchableTools.length,
+      returnedTools: Math.min(requestedLimit, matchingTools.length),
+      tools: matchingTools.slice(0, requestedLimit).map((tool) => buildSearchToolEntry(tool, includeSchema))
+    };
+  }
+
+  buildConfiguredToolEnv(configuredTool, runtimePaths) {
+    const env = {};
+
+    if (process.env.PATH) {
+      env.PATH = process.env.PATH;
+    }
+    if (process.env.LANG) {
+      env.LANG = process.env.LANG;
+    }
+    if (process.env.TZ) {
+      env.TZ = process.env.TZ;
+    }
+
+    Object.assign(env, configuredTool.credentialEnv || {}, configuredTool.runner.env || {});
+
+    env.QUERY_DIR = runtimePaths.queryDir;
+    env.RESULT_PATH = runtimePaths.resultPath;
+    env.TOOL_WORKSPACE_DIR = runtimePaths.workspaceDir;
+    env.TOOL_TMP_DIR = runtimePaths.tmpDir;
+    env.TOOL_RUN_DIR = runtimePaths.runDir;
+    env.TMPDIR = runtimePaths.tmpDir;
+
+    return env;
+  }
+
+  async executeConfiguredTool(configuredTool, args, toolContext = {}) {
+    const queryId = toolContext.queryId || null;
+    const sessionId = toolContext.sessionId || null;
+    const toolCallId = toolContext.toolCallId || null;
+    const usage = toolContext.usage || {};
+    const toolCallsByName = usage.toolCallsByName || (usage.toolCallsByName = {});
+    const currentCallCount = Number(toolCallsByName[configuredTool.name] || 0);
+    const maxCallsPerRun = Number(configuredTool.runner.maxCallsPerRun || 1);
+
+    if (!queryId || !sessionId || !toolCallId) {
+      return {
+        error: 'TOOL_CONTEXT_MISSING',
+        message: 'configured tool execution requires queryId, sessionId, and toolCallId'
+      };
+    }
+
+    if (currentCallCount >= maxCallsPerRun) {
+      return {
+        error: 'TOOL_CALL_LIMIT_REACHED',
+        message: `${configuredTool.name} may only be called ${maxCallsPerRun} times per assistant run`
+      };
+    }
+
+    toolCallsByName[configuredTool.name] = currentCallCount + 1;
+
+    const runtimePaths = this.athenaService.ensureToolRuntimePaths(queryId, sessionId, toolCallId);
+    const env = this.buildConfiguredToolEnv(configuredTool, runtimePaths);
+    const inputPayload = JSON.stringify(args ?? {});
+
+    writeArtifact(path.join(runtimePaths.runDir, 'input.json'), args ?? {});
+
+    this.logger.info('Configured assistant tool execution started', {
+      queryId,
+      sessionId,
+      toolCallId,
+      toolName: configuredTool.name,
+      cwd: configuredTool.runner.cwd,
+      command: configuredTool.runner.command,
+      timeoutMs: configuredTool.runner.timeoutMs,
+      maxStdoutBytes: configuredTool.runner.maxStdoutBytes,
+      maxStderrBytes: configuredTool.runner.maxStderrBytes,
+      callCount: toolCallsByName[configuredTool.name],
+      maxCallsPerRun
+    });
+
+    try {
+      const execution = await runConfiguredToolProcess({
+        command: configuredTool.runner.command,
+        cwd: configuredTool.runner.cwd,
+        env,
+        input: inputPayload,
+        timeoutMs: configuredTool.runner.timeoutMs,
+        maxStdoutBytes: configuredTool.runner.maxStdoutBytes,
+        maxStderrBytes: configuredTool.runner.maxStderrBytes
+      });
+
+      writeArtifact(path.join(runtimePaths.runDir, 'stdout.json'), execution.stdout);
+      writeArtifact(path.join(runtimePaths.runDir, 'stderr.txt'), execution.stderr);
+      writeArtifact(path.join(runtimePaths.runDir, 'result.json'), execution.output);
+      writeArtifact(path.join(runtimePaths.runDir, 'execution.json'), {
+        exitCode: execution.exitCode,
+        signal: execution.signal,
+        stdoutBytes: execution.stdoutBytes,
+        stderrBytes: execution.stderrBytes
+      });
+
+      return execution.output;
+    } catch (error) {
+      writeArtifact(path.join(runtimePaths.runDir, 'stdout.partial.txt'), error.stdout || '');
+      writeArtifact(path.join(runtimePaths.runDir, 'stderr.partial.txt'), error.stderr || '');
+      writeArtifact(path.join(runtimePaths.runDir, 'execution-error.json'), {
+        code: error.code || null,
+        message: error.message,
+        stdoutBytes: error.stdoutBytes || 0,
+        stderrBytes: error.stderrBytes || 0
+      });
+      throw error;
+    }
+  }
+
   async executeTool(toolName, args, toolContext = {}) {
     if (toolName === TOOL_NAMES.LIST_DATABASES) {
       const databases = await this.athenaService.listDatabases();
@@ -440,6 +754,10 @@ class AssistantService {
         submittedAt: query.submittedAt,
         updatedAt: query.updatedAt
       };
+    }
+
+    if (toolName === TOOL_NAMES.SEARCH_TOOLS) {
+      return this.searchTools(args);
     }
 
     if (toolName === TOOL_NAMES.RUN_READ_QUERY) {
@@ -543,6 +861,11 @@ class AssistantService {
           message: error.message
         };
       }
+    }
+
+    const configuredTool = this.userToolsByName.get(toolName);
+    if (configuredTool) {
+      return this.executeConfiguredTool(configuredTool, args, toolContext);
     }
 
     throw new Error(`unsupported tool: ${toolName}`);
@@ -658,7 +981,10 @@ class AssistantService {
           };
         } else {
           try {
-            toolResult = await this.executeTool(call.name, parsedArgs, runContext);
+            toolResult = await this.executeTool(call.name, parsedArgs, {
+              ...runContext,
+              toolCallId: call.id || null
+            });
           } catch (error) {
             this.logger.warn('Assistant tool call failed', {
               queryId: runContext.queryId || null,
@@ -777,7 +1103,10 @@ class AssistantService {
           };
         } else {
           try {
-            toolResult = await this.executeTool(call.name, parsedArgs, runContext);
+            toolResult = await this.executeTool(call.name, parsedArgs, {
+              ...runContext,
+              toolCallId: call.id || null
+            });
           } catch (error) {
             this.logger.warn('Assistant tool call failed', {
               queryId: runContext.queryId || null,
@@ -903,7 +1232,8 @@ class AssistantService {
           queryId,
           sessionId: nextSession.id,
           usage: {
-            readQueryCalls: 0
+            readQueryCalls: 0,
+            toolCallsByName: {}
           }
         }).catch(async (error) => {
           if (isMissingToolOutputError(error) || isToolLoopExceededError(error)) {

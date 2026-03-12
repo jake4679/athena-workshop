@@ -24,6 +24,10 @@ Minimal Node.js HTTP service for submitting and managing AWS Athena queries.
    - Provider-specific options are configured under `providers.<provider>` (for example `providers.openai.model` or `providers.anthropic.model`).
    - `assistant.assistantSeedInstruction` controls the default instruction injected when a query's assistant session is first created.
    - `assistant.maxToolRounds` controls assistant tool-loop ceiling (default/recommended: `1000`; cancel via `/query/:id/assistant/cancel` or UI cancel).
+   - Assistant tool runtime settings are configured under `tools`.
+   - `tools.credentialSets` defines named environment-variable bundles for child-process tools (for example AWS credentials for an S3 log helper).
+   - `tools.userSupplied` defines configured assistant tools with `name`, `description`, `tags`, `inputSchema`, and `runner`.
+   - Configured tools run as child processes with JSON `stdin` / `stdout`, explicit env only, and query-scoped working directories under `server.resultsDir/<query-id>/`.
 5. Install dependencies:
    ```bash
    npm install
@@ -110,7 +114,7 @@ docker compose logs -f athena-mysql
 Notes:
 
 - The app container expects config at `CONFIG_PATH=/app/config.json`.
-- The app mounts `./results` to `/data/results`, so cached/downloaded query results survive container replacement.
+- The app mounts `./results` to `/data/results`, so cached/downloaded query results and query-scoped tool workspaces survive container replacement.
 - MySQL stores data in the named volume `athena_mysql_data`, so database contents survive container replacement.
 - MySQL bootstrap scripts under `./docker/mysql/init/` run only when the MySQL data volume is initialized for the first time.
 - The app now retries MySQL initialization on startup using `server.startupRetryCount` and `server.startupRetryDelayMs`.
@@ -181,7 +185,7 @@ SELECT * FROM queries LIMIT 10;
 - `GET /query` and `GET /query?userId=<user-id>`
 - Query deep link: `/?query=<query-id>` loads that query into the UI for an authenticated user with access
 - `PUT /query/:id` body: `{ "name": "Friendly name", "query": "SELECT ...", "database": "my_db" }` (any provided field is updated)
-- `DELETE /query/:id` (removes query metadata and any local stored results)
+- `DELETE /query/:id` (removes query metadata and the local query result/tool-artifact directory tree)
 - `GET /query/:id/status`
 - `GET /query/:id/results`
 - Pagination on results: `GET /query/:id/results?limit=25&offset=0` or `GET /query/:id/results?page=1&size=25`
@@ -207,7 +211,36 @@ SELECT * FROM queries LIMIT 10;
   - max 5 `run_read_query` calls per assistant run
   - optional `maxColumns` (1-50) limits returned columns in tool output
   - backend audit logs capture original SQL, rewritten SQL, limits, and execution stats
+- Assistant includes built-in `search_tools` for discovery of built-in and configured tools.
+- Configured assistant tools from `tools.userSupplied` run sequentially within one assistant run and receive these working-directory env vars:
+  - `QUERY_DIR`
+  - `RESULT_PATH`
+  - `TOOL_WORKSPACE_DIR`
+  - `TOOL_TMP_DIR`
+  - `TOOL_RUN_DIR`
 - `GET /health`
+
+## Local Storage
+Cached query results and tool artifacts live under the configured `server.resultsDir` in this layout:
+
+```text
+results/
+  <query-id>/
+    result.json
+    tools/
+      workspace/
+      tmp/
+      runs/
+        <assistant-session-id>/
+          <tool-call-id>/
+```
+
+Behavior:
+
+- Query refresh replaces `result.json` and keeps `tools/workspace/`.
+- Query delete removes the entire `results/<query-id>/` tree.
+- Assistant compact/session rollover keeps the same query-scoped tool workspace.
+- Existing pre-migration flat result caches are not moved into the new per-query directory layout.
 
 ## Frontend
 - `GET /` serves a minimal HTML page with:

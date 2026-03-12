@@ -1,4 +1,3 @@
-const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
 function createServices({ queryStore, assistantService, athenaService, lockManager, logger, userStore, authService }) {
@@ -38,9 +37,7 @@ function createServices({ queryStore, assistantService, athenaService, lockManag
       const submitted = await athenaService.submitQuery(existing.queryText, existing.databaseName);
       const refreshed = await queryStore.resetForRefresh(id, submitted.athenaQueryExecutionId);
 
-      if (existing.resultPath && fs.existsSync(existing.resultPath)) {
-        fs.unlinkSync(existing.resultPath);
-      }
+      athenaService.clearQueryResultArtifacts(id, existing.resultPath);
 
       logger.info('Query refreshed', {
         id,
@@ -104,9 +101,7 @@ function createServices({ queryStore, assistantService, athenaService, lockManag
         }
       }
 
-      if (existing.resultPath && fs.existsSync(existing.resultPath)) {
-        fs.unlinkSync(existing.resultPath);
-      }
+      athenaService.deleteQueryArtifacts(id, existing.resultPath);
 
       await queryStore.deleteById(id);
       logger.info('Query deleted', { id });

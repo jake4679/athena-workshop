@@ -25,6 +25,12 @@ function loadConfig(argv = process.argv.slice(2)) {
   const absolutePath = path.resolve(process.cwd(), args.configPath);
   const fileContents = fs.readFileSync(absolutePath, 'utf-8');
   const config = JSON.parse(fileContents);
+  Object.defineProperty(config, '__configPath', {
+    value: absolutePath,
+    enumerable: false,
+    configurable: false,
+    writable: false
+  });
 
   if (Number.isFinite(args.port)) {
     config.server = config.server || {};
