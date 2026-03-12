@@ -207,6 +207,8 @@ async function initSchema(pool, options = {}) {
       run_started_at DATETIME NULL,
       run_finished_at DATETIME NULL,
       cancel_requested_at DATETIME NULL,
+      seed_query_hash VARCHAR(64) NULL,
+      seed_database_name VARCHAR(255) NULL,
       token_usage_prompt BIGINT NOT NULL DEFAULT 0,
       token_usage_completion BIGINT NOT NULL DEFAULT 0,
       token_usage_total BIGINT NOT NULL DEFAULT 0,
@@ -231,7 +233,9 @@ async function initSchema(pool, options = {}) {
     { name: 'run_status', ddl: "ALTER TABLE assistant_sessions ADD COLUMN run_status VARCHAR(32) NOT NULL DEFAULT 'IDLE'" },
     { name: 'run_started_at', ddl: 'ALTER TABLE assistant_sessions ADD COLUMN run_started_at DATETIME NULL' },
     { name: 'run_finished_at', ddl: 'ALTER TABLE assistant_sessions ADD COLUMN run_finished_at DATETIME NULL' },
-    { name: 'cancel_requested_at', ddl: 'ALTER TABLE assistant_sessions ADD COLUMN cancel_requested_at DATETIME NULL' }
+    { name: 'cancel_requested_at', ddl: 'ALTER TABLE assistant_sessions ADD COLUMN cancel_requested_at DATETIME NULL' },
+    { name: 'seed_query_hash', ddl: 'ALTER TABLE assistant_sessions ADD COLUMN seed_query_hash VARCHAR(64) NULL' },
+    { name: 'seed_database_name', ddl: 'ALTER TABLE assistant_sessions ADD COLUMN seed_database_name VARCHAR(255) NULL' }
   ];
 
   for (const column of sessionColumnsToEnsure) {

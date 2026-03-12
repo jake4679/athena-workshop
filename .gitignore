@@ -3,6 +3,7 @@ node_modules
 results
 *.swp
 .env
+*.DS_store
 docker/config/config.json
 docker/mysql/backups/*.sql
 docker/mysql/backups/*.tgz

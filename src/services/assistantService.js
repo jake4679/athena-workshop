@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('node:crypto');
 const { TOOL_NAMES, assistantToolDefinitions } = require('../assistant/tools');
 const { OpenAIProvider } = require('../assistant/providers/openaiProvider');
 const { AnthropicProvider } = require('../assistant/providers/anthropicProvider');
@@ -165,6 +166,24 @@ function summarizeForLog(value, maxLength = 800) {
   return text.length > maxLength ? `${text.slice(0, maxLength)}...<truncated>` : text;
 }
 
+function normalizeDatabaseName(databaseName) {
+  return typeof databaseName === 'string' && databaseName.trim() !== '' ? databaseName.trim() : null;
+}
+
+function buildQueryContextSnapshot(query) {
+  const normalizedDatabaseName = normalizeDatabaseName(query?.databaseName);
+  const queryText = typeof query?.queryText === 'string' ? query.queryText : '';
+  const seedQueryHash = crypto
+    .createHash('sha256')
+    .update(JSON.stringify({ databaseName: normalizedDatabaseName, queryText }))
+    .digest('hex');
+
+  return {
+    seedQueryHash,
+    seedDatabaseName: normalizedDatabaseName
+  };
+}
+
 function isMissingToolOutputError(error) {
   const msg = String(error?.message || '');
   return /No tool output found for function call/i.test(msg);
@@ -247,12 +266,15 @@ class AssistantService {
   }
 
   async createSessionForQuery(query, options = {}) {
+    const snapshot = buildQueryContextSnapshot(query);
     const session = await this.assistantStore.createSession({
       id: uuidv4(),
       queryId: query.id,
       mode: 'query_assistant',
       provider: this.providerName,
-      model: this.model
+      model: this.model,
+      seedQueryHash: snapshot.seedQueryHash,
+      seedDatabaseName: snapshot.seedDatabaseName
     });
 
     const seedMessage = await this.createSessionSeedMessage(query, options);
@@ -289,6 +311,24 @@ class AssistantService {
     session = await this.createSessionForQuery(query);
 
     return { session, created: true };
+  }
+
+  hasSessionQueryDrift(session, query) {
+    const snapshot = buildQueryContextSnapshot(query);
+    return (
+      session.seedQueryHash !== snapshot.seedQueryHash ||
+      normalizeDatabaseName(session.seedDatabaseName) !== snapshot.seedDatabaseName
+    );
+  }
+
+  async rolloverSessionForQueryChange(query, previousSession) {
+    const messages = await this.assistantStore.listMessagesBySessionId(previousSession.id);
+    const summaryText = await this.summarizeConversation(messages, query);
+    const session = await this.createSessionForQuery(query, {
+      previousConversationSummary: summaryText,
+      visibleSummaryMessage: `Conversation compacted from prior session after query update. Summary:\n\n${summaryText}`
+    });
+    return { session, created: true, rolledOver: true, summaryIncluded: Boolean(summaryText) };
   }
 
   async summarizeConversation(messages, query) {
@@ -826,13 +866,24 @@ class AssistantService {
       }
 
       const { session } = await this.getOrCreateSession(query);
+      let nextSession = session;
       if (session.runStatus === 'RUNNING' || session.runStatus === 'CANCELLING') {
         return { error: 'RUN_ACTIVE', session };
       }
 
-      const started = await this.assistantStore.markRunStarted(session.id);
+      if (this.hasSessionQueryDrift(session, query)) {
+        this.logger.info('Assistant session rolled over after query context changed', {
+          queryId,
+          previousSessionId: session.id,
+          provider: this.providerName
+        });
+        const rolled = await this.rolloverSessionForQueryChange(query, session);
+        nextSession = rolled.session;
+      }
+
+      const started = await this.assistantStore.markRunStarted(nextSession.id);
       if (!started) {
-        const latestSession = await this.assistantStore.getSessionById(session.id);
+        const latestSession = await this.assistantStore.getSessionById(nextSession.id);
         if (latestSession && (latestSession.runStatus === 'RUNNING' || latestSession.runStatus === 'CANCELLING')) {
           return { error: 'RUN_ACTIVE', session: latestSession };
         }
@@ -841,37 +892,37 @@ class AssistantService {
 
       await this.assistantStore.createMessage({
         id: uuidv4(),
-        sessionId: session.id,
+        sessionId: nextSession.id,
         role: 'user',
         content: prompt,
         contentType: 'text'
       });
 
       setImmediate(() => {
-        this.runAssistantLoop(session.id, prompt, {
+        this.runAssistantLoop(nextSession.id, prompt, {
           queryId,
-          sessionId: session.id,
+          sessionId: nextSession.id,
           usage: {
             readQueryCalls: 0
           }
         }).catch(async (error) => {
           if (isMissingToolOutputError(error) || isToolLoopExceededError(error)) {
-            await this.assistantStore.updateProviderConversationId(session.id, null);
+            await this.assistantStore.updateProviderConversationId(nextSession.id, null);
           }
           this.logger.error('Assistant run failed', {
             queryId,
-            sessionId: session.id,
+            sessionId: nextSession.id,
             provider: this.providerName,
             error: error.message
           });
-          await this.assistantStore.markRunFailed(session.id, error.message);
+          await this.assistantStore.markRunFailed(nextSession.id, error.message);
         });
       });
 
-      const current = await this.assistantStore.getSessionById(session.id);
+      const current = await this.assistantStore.getSessionById(nextSession.id);
       return {
         accepted: true,
-        sessionId: session.id,
+        sessionId: nextSession.id,
         provider: this.providerName,
         runStatus: current.runStatus,
         runStartedAt: current.runStartedAt

@@ -30,6 +30,8 @@ function fromSessionRow(row) {
     runStartedAt: toIsoOrNull(row.run_started_at),
     runFinishedAt: toIsoOrNull(row.run_finished_at),
     cancelRequestedAt: toIsoOrNull(row.cancel_requested_at),
+    seedQueryHash: row.seed_query_hash || null,
+    seedDatabaseName: row.seed_database_name || null,
     tokenUsagePrompt: Number(row.token_usage_prompt || 0),
     tokenUsageCompletion: Number(row.token_usage_completion || 0),
     tokenUsageTotal: Number(row.token_usage_total || 0),
@@ -106,8 +108,9 @@ class AssistantStore {
       `INSERT INTO assistant_sessions (
         id, query_id, mode, provider, provider_conversation_id, openai_conversation_id, model, status, run_status,
         created_at, updated_at, last_used_at, run_started_at, run_finished_at, cancel_requested_at,
+        seed_query_hash, seed_database_name,
         token_usage_prompt, token_usage_completion, token_usage_total, last_error_message
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 'IDLE', ?, ?, ?, NULL, NULL, NULL, 0, 0, 0, NULL)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 'IDLE', ?, ?, ?, NULL, NULL, NULL, ?, ?, 0, 0, 0, NULL)`,
       [
         record.id,
         record.queryId,
@@ -118,7 +121,9 @@ class AssistantStore {
         record.model || null,
         now,
         now,
-        now
+        now,
+        record.seedQueryHash || null,
+        record.seedDatabaseName || null
       ]
     );
 

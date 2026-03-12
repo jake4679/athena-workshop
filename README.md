@@ -192,6 +192,7 @@ SELECT * FROM queries LIMIT 10;
 - `POST /query/:id/assistant/cancel` (requests cancellation of active assistant run)
 - `POST /query/:id/assistant/compact` body: `{ "mode": "empty" | "summarize" }` (resets to a new assistant session; summarize mode carries forward a summary into the new session)
 - `GET /query/:id/assistant/messages` (returns persisted assistant conversation messages for the query across the query's assistant sessions; compact summaries remain visible as assistant messages)
+- When a query's stored SQL text or selected database changes, the next `POST /query/:id/assistant/send` automatically rolls over to a new assistant session seeded with the updated query context and a carry-forward summary of prior guidance.
 - `GET /users` (admin only)
 - `GET /users/:id` (self or admin)
 - `PUT /users/:id` body: `{ "email": "new@example.com", "firstName": "Ada", "lastName": "Lovelace" }` for self updates; admins may also send `{ "status": "ACTIVE" | "DISABLED" }`
@@ -228,6 +229,7 @@ SELECT * FROM queries LIMIT 10;
 - Assistant compact controls for session reset (`Compact`) and summarize-then-reset (`Compact + Summary`)
 - Assistant prompt submit via `Cmd+Enter` / `Ctrl+Enter` when prompt textarea is focused
 - Assistant run polling (`/assistant/status`) and conversation rendering (`/assistant/messages`) preserve visible history across compacted assistant sessions for the same query
+- Assistant automatically re-grounds on the latest stored SQL/database after query edits by rolling over to a new summarized session while keeping the visible thread history across sessions
 - Assistant metadata line includes run status, elapsed timer, and current-session token usage
 - Assistant responses are rendered as sanitized Markdown (with plain-text fallback if Markdown libraries fail to load)
 - Assistant panel shows optimistic user messages immediately on send and a live animated typing indicator while assistant run is active

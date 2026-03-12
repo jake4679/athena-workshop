@@ -48,6 +48,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Assistant status should include cumulative token usage for the current provider session.
 - Assistant compact should reject while a run is active; summarize compact should carry forward a summary into the new session.
 - Assistant message history remains visible across compacted sessions for the same query; summarize compact adds its summary as part of the visible conversation.
+- When a query's stored SQL text or selected database changes, the next assistant send automatically rolls over to a new summarized session so the provider context is re-grounded on the latest query while prior guidance is retained.
 - Assistant provider calls (OpenAI/Anthropic) do not use a local backend timeout; runs complete when response returns or are cancelled/failed.
 - Any Google account may authenticate; local users are auto-created on first successful login.
 - Session-backed auth uses MySQL persistence; disabled users lose access on their next request.
@@ -134,6 +135,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - MySQL-backed `users`, `user_identities`, `roles`, `user_roles`, and `user_sessions` tables.
 - MySQL-backed `queries` table for query metadata/state, selected Athena `database`, and nullable `created_by_user_id`.
 - MySQL-backed `assistant_sessions` and `assistant_messages` tables for assistant conversation persistence.
+- `assistant_sessions` stores the seeded query-context snapshot used to detect query drift and trigger automatic summarized rollover on the next assistant send.
 - Athena integration using AWS SDK v3.
 - Background poller updates state and downloads results on success.
 - Per-query lock manager to avoid race conditions between poll/cancel/refresh.
