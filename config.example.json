@@ -7,7 +7,7 @@
     "startupRetryDelayMs": 0
   },
   "auth": {
-    "mode": "oidc",
+    "mode": "enabled",
     "baseURL": "http://localhost:3000",
     "sessionSecret": "change-me-session-secret",
     "sessionCookieName": "athena.sid",
@@ -21,9 +21,15 @@
       "roles": ["admin", "querier", "viewer"]
     },
     "google": {
+      "enabled": true,
       "issuer": "https://accounts.google.com",
       "clientId": "change-me-google-client-id",
       "clientSecret": "change-me-google-client-secret"
+    },
+    "local": {
+      "enabled": true,
+      "passwordPepperEnvVar": "AUTH_PASSWORD_PEPPER",
+      "passwordPepper": "change-me-local-password-pepper"
     }
   },
   "aws": {

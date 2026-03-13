@@ -2,12 +2,19 @@ const path = require('path');
 const express = require('express');
 const { buildRouter } = require('./routes/router');
 
-function buildApp({ services, logger, sessionMiddleware, staticDir = path.resolve(__dirname, '../public') }) {
+function buildApp({
+  services,
+  logger,
+  sessionMiddleware,
+  staticDir = path.resolve(__dirname, '../public'),
+  monacoStaticDir = path.resolve(__dirname, '../node_modules/monaco-editor/min')
+}) {
   const app = express();
   if (sessionMiddleware) {
     app.use(sessionMiddleware);
   }
   app.use(express.json());
+  app.use('/vendor/monaco', express.static(monacoStaticDir));
   app.use(express.static(staticDir));
 
   app.get('/health', (_req, res) => {

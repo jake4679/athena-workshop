@@ -191,7 +191,7 @@ async function startServer() {
       port,
       configPath,
       resultsDir,
-      authMode: config.auth?.mode || 'oidc'
+      authMode: config.auth?.mode || 'enabled'
     });
   });
 }

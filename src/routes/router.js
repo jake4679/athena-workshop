@@ -33,6 +33,7 @@ const {
 } = require('./queryHandlers');
 const {
   getAuthMeHandler,
+  localLoginHandler,
   googleLoginHandler,
   googleCallbackHandler,
   logoutHandler
@@ -53,6 +54,7 @@ function buildRouter(context) {
   router.use(authn);
 
   router.get('/auth/me', getAuthMeHandler(context));
+  router.post('/auth/login', localLoginHandler(context));
   router.get('/auth/login/google', googleLoginHandler(context));
   router.get('/auth/google/callback', googleCallbackHandler(context));
   router.post('/auth/logout', logoutHandler(context));

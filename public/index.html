@@ -776,21 +776,12 @@
         border-radius: 22px;
       }
 
-      #editor,
-      #editorFallback {
+      #editor {
         height: 100%;
         width: 100%;
         border: 0;
         background: transparent;
         color: var(--text);
-      }
-
-      #editorFallback {
-        display: none;
-        padding: 16px;
-        resize: none;
-        font-size: 14px;
-        line-height: 1.5;
       }
 
       .database-select,
@@ -1154,8 +1145,8 @@
           </div>
           <form id="loginForm" class="login-form">
             <div class="login-field">
-              <label for="loginUsername">Username</label>
-              <input id="loginUsername" type="text" name="username" autocomplete="username" />
+              <label for="loginEmail">Email</label>
+              <input id="loginEmail" type="email" name="email" autocomplete="username" />
             </div>
             <div class="login-field">
               <label for="loginPassword">Password</label>
@@ -1165,8 +1156,8 @@
               <button id="loginSubmitBtn" class="btn-light login-secondary" type="submit">Log In</button>
             </div>
           </form>
-          <div class="login-divider">or</div>
-          <div class="login-actions">
+          <div id="loginDivider" class="login-divider">or</div>
+          <div id="loginGoogleActions" class="login-actions">
             <button id="loginPageBtn" class="btn-accent" type="button">Log In With Google</button>
           </div>
           <div id="loginMessage" class="login-note">Checking authentication status…</div>
@@ -1305,7 +1296,6 @@
                 </div>
                 <div class="editor-shell">
                   <div id="editor"></div>
-                  <textarea id="editorFallback" aria-label="SQL editor fallback"></textarea>
                 </div>
                 <div id="status" class="status-strip">Idle</div>
               </div>
@@ -1402,21 +1392,25 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
     <script>
-      window.require = { paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.53.0/min/vs' } };
+      const MONACO_BASE_URL = `${window.location.origin}/vendor/monaco/`;
+      window.require = { paths: { vs: '/vendor/monaco/vs' } };
       window.MonacoEnvironment = {
         getWorkerUrl: function () {
           const code = [
-            "self.MonacoEnvironment = { baseUrl: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.53.0/min/' };",
-            "importScripts('https://cdn.jsdelivr.net/npm/monaco-editor@0.53.0/min/vs/base/worker/workerMain.js');"
+            `self.MonacoEnvironment = { baseUrl: ${JSON.stringify(MONACO_BASE_URL)} };`,
+            `importScripts(${JSON.stringify(`${MONACO_BASE_URL}vs/base/worker/workerMain.js`)});`
           ].join('\\n');
           return `data:text/javascript;charset=utf-8,${encodeURIComponent(code)}`;
         }
       };
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.53.0/min/vs/loader.js"></script>
+    <script src="/vendor/monaco/vs/loader.js"></script>
     <script>
       let editor;
-      let fallbackMode = false;
+      let editorReady = false;
+      let editorLoading = true;
+      let editorLoadError = null;
+      let editorQueuedValue = 'SELECT current_timestamp AS ts;';
       let pollTimer = null;
       let queryListTimer = null;
       let resultsTable = null;
@@ -1452,9 +1446,12 @@
       let completionProviderRegistered = false;
       let currentUser = null;
       let currentRoles = [];
-      let authMode = 'oidc';
+      let authMode = 'enabled';
+      let currentAuthProviders = { google: false, local: false };
       let queryListEntries = [];
       let queryScope = 'mine';
+      let appBootstrapPromise = null;
+      let queryListAutoRefreshStarted = false;
       const VALIDATION_DEBOUNCE_MS = 650;
       const UI_STATE_STORAGE_KEY = 'athena_query_console_ui_state_v1';
       const THEME_STORAGE_KEY = 'athena_query_console_theme_v1';
@@ -1471,8 +1468,12 @@
       const loginViewEl = document.getElementById('loginView');
       const appViewEl = document.getElementById('appView');
       const loginFormEl = document.getElementById('loginForm');
+      const loginEmailEl = document.getElementById('loginEmail');
+      const loginPasswordEl = document.getElementById('loginPassword');
       const loginSubmitBtn = document.getElementById('loginSubmitBtn');
       const loginMessageEl = document.getElementById('loginMessage');
+      const loginDividerEl = document.getElementById('loginDivider');
+      const loginGoogleActionsEl = document.getElementById('loginGoogleActions');
       const loginPageBtn = document.getElementById('loginPageBtn');
       const themeToggleBtn = document.getElementById('themeToggleBtn');
       const authSummaryEl = document.getElementById('authSummary');
@@ -1487,7 +1488,7 @@
       const submitBtn = document.getElementById('submitBtn');
       const cancelQueryBtn = document.getElementById('cancelQueryBtn');
       const toggleEditorBtn = document.getElementById('toggleEditorBtn');
-      const fallbackEditorEl = document.getElementById('editorFallback');
+      const editorHostEl = document.getElementById('editor');
       const metaNameEl = document.getElementById('metaName');
       const metaQueryIdEl = document.getElementById('metaQueryId');
       const metaStatusEl = document.getElementById('metaStatus');
@@ -1629,28 +1630,37 @@
       }
 
       function getEditorValue() {
-        if (fallbackMode) {
-          return fallbackEditorEl.value;
+        if (editor) {
+          return editor.getValue();
         }
-        return editor ? editor.getValue() : '';
+        return editorQueuedValue;
       }
 
       function setEditorValue(value) {
-        if (fallbackMode) {
-          fallbackEditorEl.value = value;
-          return;
-        }
+        const normalizedValue = typeof value === 'string' ? value : '';
+        editorQueuedValue = normalizedValue;
         if (editor) {
-          editor.setValue(value);
+          editor.setValue(normalizedValue);
         }
       }
 
-      function enableFallbackEditor(initialValue) {
-        fallbackMode = true;
-        document.getElementById('editor').style.display = 'none';
-        fallbackEditorEl.style.display = 'block';
-        fallbackEditorEl.value = initialValue;
-        renderStatus('Monaco failed to load. Using fallback editor.', true);
+      function updateEditorControls() {
+        const editorUnavailable = !editorReady;
+        formatSqlBtn.disabled = editorUnavailable;
+        submitBtn.disabled = editorUnavailable;
+      }
+
+      function setEditorState(nextState = {}) {
+        if (Object.prototype.hasOwnProperty.call(nextState, 'ready')) {
+          editorReady = Boolean(nextState.ready);
+        }
+        if (Object.prototype.hasOwnProperty.call(nextState, 'loading')) {
+          editorLoading = Boolean(nextState.loading);
+        }
+        if (Object.prototype.hasOwnProperty.call(nextState, 'error')) {
+          editorLoadError = nextState.error ? String(nextState.error) : null;
+        }
+        updateEditorControls();
       }
 
       function renderStatus(message, isError) {
@@ -1660,6 +1670,11 @@
       }
 
       function formatSqlInEditor() {
+        if (!editorReady) {
+          const message = editorLoading ? 'SQL editor is still loading.' : `SQL editor is unavailable${editorLoadError ? `: ${editorLoadError}` : '.'}`;
+          renderStatus(message, true);
+          return;
+        }
         const sql = getEditorValue();
         if (!sql.trim()) {
           renderStatus('Query text is required before formatting.', true);
@@ -2228,11 +2243,34 @@
         loginMessageEl.textContent = message;
       }
 
+      function applyLoginProviderVisibility() {
+        const localEnabled = Boolean(currentAuthProviders.local);
+        const googleEnabled = Boolean(currentAuthProviders.google);
+        loginFormEl.classList.toggle('view-hidden', !localEnabled);
+        loginDividerEl.classList.toggle('view-hidden', !(localEnabled && googleEnabled));
+        loginGoogleActionsEl.classList.toggle('view-hidden', !googleEnabled);
+        loginEmailEl.disabled = !localEnabled;
+        loginPasswordEl.disabled = !localEnabled;
+        loginSubmitBtn.disabled = !localEnabled;
+      }
+
       function renderAuthState() {
+        applyLoginProviderVisibility();
+
         if (!currentUser) {
           authSummaryEl.textContent = 'Not signed in';
           logoutBtn.hidden = true;
-          setLoginMessage('Sign in with Google to open the Athena workspace.');
+          if (authMode === 'disabled') {
+            setLoginMessage('Development auth bypass is active.');
+          } else if (currentAuthProviders.local && currentAuthProviders.google) {
+            setLoginMessage('Sign in with email/password or Google to open the Athena workspace.');
+          } else if (currentAuthProviders.local) {
+            setLoginMessage('Sign in with email/password to open the Athena workspace.');
+          } else if (currentAuthProviders.google) {
+            setLoginMessage('Sign in with Google to open the Athena workspace.');
+          } else {
+            setLoginMessage('Authentication is enabled but no sign-in providers are available.');
+          }
           showView('login');
           return;
         }
@@ -2255,7 +2293,8 @@
 
         currentUser = res.json.authenticated ? res.json.user : null;
         currentRoles = Array.isArray(res.json.roles) ? res.json.roles : [];
-        authMode = res.json.mode || 'oidc';
+        authMode = res.json.mode || 'enabled';
+        currentAuthProviders = res.json.providers || { google: false, local: false };
         renderAuthState();
         return res.json;
       }
@@ -2333,7 +2372,7 @@
       }
 
       async function runValidation() {
-        if (!editor) {
+        if (!editorReady || !editor) {
           return;
         }
         if (!selectedDatabase) {
@@ -2363,6 +2402,9 @@
       }
 
       function scheduleValidation() {
+        if (!editorReady) {
+          return;
+        }
         if (validateTimer) {
           clearTimeout(validateTimer);
           validateTimer = null;
@@ -2389,6 +2431,7 @@
         });
         completionProviderRegistered = true;
         editor.onDidChangeModelContent(() => {
+          editorQueuedValue = editor.getValue();
           scheduleValidation();
         });
       }
@@ -2744,6 +2787,15 @@
         const queryIdFromUrl = getQueryIdFromUrl();
         if (queryIdFromUrl) {
           selectedQueryId = queryIdFromUrl;
+        }
+      }
+
+      function clearPersistedAppState() {
+        try {
+          window.localStorage.removeItem(UI_STATE_STORAGE_KEY);
+          window.localStorage.removeItem(THEME_STORAGE_KEY);
+        } catch (_error) {
+          // ignore local storage failures
         }
       }
 
@@ -3229,6 +3281,11 @@
       }
 
       submitBtn.addEventListener('click', async () => {
+        if (!editorReady) {
+          const message = editorLoading ? 'SQL editor is still loading.' : `SQL editor is unavailable${editorLoadError ? `: ${editorLoadError}` : '.'}`;
+          renderStatus(message, true);
+          return;
+        }
         if (!selectedDatabase) {
           renderStatus('Select an Athena database first.', true);
           return;
@@ -3301,16 +3358,8 @@
         } catch (err) {
           renderStatus(`Submit error: ${err.message}`, true);
         } finally {
-          submitBtn.disabled = false;
+          updateEditorControls();
         }
-      });
-
-      fallbackEditorEl.addEventListener('keydown', (event) => {
-        if (!isSubmitShortcut(event)) {
-          return;
-        }
-        event.preventDefault();
-        submitBtn.click();
       });
 
       metaNameEl.addEventListener('blur', () => {
@@ -3514,21 +3563,48 @@
         }
 
         setEditorValue(message.content || '');
-        if (fallbackMode) {
-          fallbackEditorEl.focus();
-        } else if (editor) {
+        if (editor) {
           editor.focus();
         }
         renderStatus(`Copied ${getBuddyLabel()} response into query editor.`, false);
       });
 
-      loginFormEl.addEventListener('submit', (event) => {
+      loginFormEl.addEventListener('submit', async (event) => {
         event.preventDefault();
         loginSubmitBtn.blur();
-        setLoginMessage('Username/password sign-in is not enabled. Use "Log In With Google".');
+        if (!currentAuthProviders.local) {
+          setLoginMessage('Email/password sign-in is not enabled.');
+          return;
+        }
+
+        const email = loginEmailEl.value.trim();
+        const password = loginPasswordEl.value;
+        if (!email || !password) {
+          setLoginMessage('Email and password are required.');
+          return;
+        }
+
+        setLoginMessage('Signing in…');
+        loginSubmitBtn.disabled = true;
+        try {
+          const res = await apiRequest('/auth/login', 'POST', { email, password });
+          if (!res.ok) {
+            setLoginMessage(res.json.message || `Sign-in failed (${res.status}).`);
+            return;
+          }
+          window.location.reload();
+        } catch (error) {
+          setLoginMessage(error.message);
+        } finally {
+          applyLoginProviderVisibility();
+        }
       });
 
       loginPageBtn.addEventListener('click', () => {
+        if (!currentAuthProviders.google) {
+          setLoginMessage('Google sign-in is not enabled.');
+          return;
+        }
         window.location.href = '/auth/login/google';
       });
 
@@ -3538,6 +3614,8 @@
           if (!res.ok) {
             throw new Error(`Logout failed (${res.status})`);
           }
+          clearPersistedAppState();
+          updateUrlForSelectedQuery(null, { history: 'replace' });
           window.location.reload();
         } catch (error) {
           renderStatus(error.message, true);
@@ -3595,6 +3673,35 @@
         return true;
       }
 
+      function restoreAppUiState() {
+        restoreUiState();
+        queryScopeSelectEl.value = queryScope;
+        setSchemaCollapsed(schemaCollapsed);
+        setQueryListCollapsed(queryListCollapsed);
+        setAssistantCollapsed(assistantCollapsed);
+        setEditorCollapsed(editorCollapsed);
+        updateAssistantLabels();
+        setAssistantRunStatus('IDLE', null);
+      }
+
+      function bootstrapAppState() {
+        if (!appBootstrapPromise) {
+          appBootstrapPromise = initializeAppState()
+            .then(async (authenticated) => {
+              if (authenticated && !queryListAutoRefreshStarted) {
+                startQueryListAutoRefresh();
+                queryListAutoRefreshStarted = true;
+              }
+              return authenticated;
+            })
+            .catch((error) => {
+              renderStatus(`Failed to initialize app state: ${error.message}`, true);
+              throw error;
+            });
+        }
+        return appBootstrapPromise;
+      }
+
       function startQueryListAutoRefresh() {
         if (queryListTimer) {
           clearInterval(queryListTimer);
@@ -3608,8 +3715,8 @@
 
       function onMonacoReady() {
         try {
-          editor = monaco.editor.create(document.getElementById('editor'), {
-            value: 'SELECT current_timestamp AS ts;',
+          editor = monaco.editor.create(editorHostEl, {
+            value: editorQueuedValue,
             language: 'sql',
             theme: getMonacoThemeName(selectedTheme),
             minimap: { enabled: false },
@@ -3621,61 +3728,29 @@
             readOnly: false,
             domReadOnly: false
           });
-          restoreUiState();
-          queryScopeSelectEl.value = queryScope;
-          setSchemaCollapsed(schemaCollapsed);
-          setQueryListCollapsed(queryListCollapsed);
-          setAssistantCollapsed(assistantCollapsed);
-          setEditorCollapsed(editorCollapsed);
-          updateAssistantLabels();
-          setAssistantRunStatus('IDLE', null);
+          setEditorState({ ready: true, loading: false, error: null });
           setupMonacoEnhancements();
           editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
             submitBtn.click();
           });
           scheduleValidation();
-          initializeAppState()
-            .then(async (authenticated) => {
-              if (authenticated) {
-                startQueryListAutoRefresh();
-              }
-            })
-            .catch((error) => {
-              renderStatus(`Failed to initialize app state: ${error.message}`, true);
-            });
         } catch (error) {
-          renderStatus(`Monaco initialization failed: ${error.message}`, true);
-          onMonacoUnavailable();
+          onMonacoLoadFailed(error.message);
         }
       }
 
-      function onMonacoUnavailable() {
-        try {
-          enableFallbackEditor('SELECT current_timestamp AS ts;');
-          restoreUiState();
-          queryScopeSelectEl.value = queryScope;
-          setSchemaCollapsed(schemaCollapsed);
-          setQueryListCollapsed(queryListCollapsed);
-          setAssistantCollapsed(assistantCollapsed);
-          setEditorCollapsed(editorCollapsed);
-          updateAssistantLabels();
-          setAssistantRunStatus('IDLE', null);
-          initializeAppState()
-            .then(async (authenticated) => {
-              if (authenticated) {
-                startQueryListAutoRefresh();
-              }
-            })
-            .catch((error) => {
-              renderStatus(`Failed to initialize app state: ${error.message}`, true);
-            });
-        } catch (error) {
-          renderStatus(`Fallback initialization failed: ${error.message}`, true);
-        }
+      function onMonacoLoadFailed(message) {
+        setEditorState({ ready: false, loading: false, error: message });
+        renderStatus(`SQL editor failed to load: ${message}. Refresh to retry.`, true);
       }
 
       restoreTheme();
       showView('login');
+      restoreAppUiState();
+      setEditorState({ ready: false, loading: true, error: null });
+      bootstrapAppState().catch(() => {
+        // handled through renderStatus
+      });
 
       if (typeof window.require === 'function') {
         window.require(
@@ -3683,12 +3758,12 @@
           () => {
             onMonacoReady();
           },
-          () => {
-            onMonacoUnavailable();
+          (error) => {
+            onMonacoLoadFailed(error && error.message ? error.message : 'Monaco loader failed');
           }
         );
       } else {
-        onMonacoUnavailable();
+        onMonacoLoadFailed('Monaco loader is unavailable');
       }
     </script>
   </body>

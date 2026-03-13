@@ -43,15 +43,19 @@ function updateUserHandler({ services }) {
       const nextFirstName = req.body?.firstName;
       const nextLastName = req.body?.lastName;
       const nextStatus = req.body?.status;
+      const nextPassword = req.body?.password;
+      const currentPassword = req.body?.currentPassword;
       const hasStatus = nextStatus !== undefined;
       const hasEmail = nextEmail !== undefined;
       const hasFirstName = nextFirstName !== undefined;
       const hasLastName = nextLastName !== undefined;
+      const hasPassword = nextPassword !== undefined;
+      const hasCurrentPassword = currentPassword !== undefined;
 
-      if (!hasEmail && !hasFirstName && !hasLastName && !hasStatus) {
+      if (!hasEmail && !hasFirstName && !hasLastName && !hasStatus && !hasPassword) {
         return res.status(400).json({
           error: 'INVALID_REQUEST',
-          message: 'Request body must include at least one of: email, firstName, lastName, status'
+          message: 'Request body must include at least one of: email, firstName, lastName, status, password'
         });
       }
 
@@ -76,6 +80,27 @@ function updateUserHandler({ services }) {
         });
       }
 
+      if (hasCurrentPassword && !hasPassword) {
+        return res.status(400).json({
+          error: 'INVALID_REQUEST',
+          message: 'currentPassword may only be provided when password is also provided'
+        });
+      }
+
+      if (hasPassword && (typeof nextPassword !== 'string' || nextPassword.length === 0)) {
+        return res.status(400).json({
+          error: 'INVALID_REQUEST',
+          message: 'password must be a non-empty string'
+        });
+      }
+
+      if (!canAdminEdit && hasPassword && (typeof currentPassword !== 'string' || currentPassword.length === 0)) {
+        return res.status(400).json({
+          error: 'INVALID_REQUEST',
+          message: 'currentPassword is required when updating your own password'
+        });
+      }
+
       if (hasStatus && !canAdminEdit) {
         return res.status(403).json({
           error: 'FORBIDDEN',
@@ -90,17 +115,50 @@ function updateUserHandler({ services }) {
         });
       }
 
-      const updated = await services.userStore.updateUserProfile(req.params.id, {
-        email: hasEmail ? nextEmail.trim() : undefined,
-        firstName: hasFirstName ? nextFirstName.trim() : undefined,
-        lastName: hasLastName ? nextLastName.trim() : undefined,
-        status: hasStatus ? nextStatus : undefined
-      });
+      let updated = req.targetUser;
+
+      if (hasPassword) {
+        if (canAdminEdit) {
+          updated = await services.authService.setUserPassword(req.params.id, nextPassword);
+        } else {
+          updated = await services.authService.changeOwnPassword(req.params.id, currentPassword, nextPassword);
+        }
+      }
+
+      if (hasEmail || hasFirstName || hasLastName || hasStatus) {
+        updated = await services.userStore.updateUserProfile(req.params.id, {
+          email: hasEmail ? nextEmail.trim() : undefined,
+          firstName: hasFirstName ? nextFirstName.trim() : undefined,
+          lastName: hasLastName ? nextLastName.trim() : undefined,
+          status: hasStatus ? nextStatus : undefined
+        });
+      }
 
       return res.status(200).json({
         user: formatUser(updated)
       });
-    } catch (_error) {
+    } catch (error) {
+      if (error.code === 'CURRENT_PASSWORD_INVALID') {
+        return res.status(403).json({
+          error: error.code,
+          message: error.message
+        });
+      }
+
+      if (error.code === 'LOCAL_PASSWORD_UNAVAILABLE') {
+        return res.status(403).json({
+          error: error.code,
+          message: error.message
+        });
+      }
+
+      if (error.code === 'USER_NOT_FOUND') {
+        return res.status(404).json({
+          error: error.code,
+          message: 'Unknown user'
+        });
+      }
+
       return res.status(500).json({
         error: 'USER_UPDATE_FAILED',
         message: 'Failed to update user'

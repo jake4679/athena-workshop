@@ -6,7 +6,8 @@ Before making changes, scan the repository tree for additional `AGENTS.md` files
 Build a minimal Node.js HTTP server to manage AWS Athena queries.
 
 ## API Requirements
-- `GET /auth/me`: return current authenticated user profile and roles, or unauthenticated state.
+- `GET /auth/me`: return current authenticated user profile and roles, or unauthenticated state, plus auth mode and enabled sign-in providers.
+- `POST /auth/login`: authenticate a local account by email/password and start a session.
 - `GET /auth/login/google`: start Google OIDC login.
 - `GET /auth/google/callback`: complete Google OIDC login.
 - `POST /auth/logout`: destroy the authenticated session.
@@ -32,7 +33,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - `GET /query/:id/assistant/messages`: return persisted assistant conversation messages for a query across the query's assistant sessions; compaction summaries remain part of the visible conversation.
 - `GET /users`: list users (admin only).
 - `GET /users/:id`: fetch a specific user (self or admin).
-- `PUT /users/:id`: update a specific user profile.
+- `PUT /users/:id`: update a specific user profile and, when authorized, their password.
 - `DELETE /users/:id`: disable a user (admin only).
 - `GET /health`: health check endpoint.
 
@@ -53,8 +54,12 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Assistant message history remains visible across compacted sessions for the same query; summarize compact adds its summary as part of the visible conversation.
 - When a query's stored SQL text or selected database changes, the next assistant send automatically rolls over to a new summarized session so the provider context is re-grounded on the latest query while prior guidance is retained.
 - Assistant provider calls (OpenAI/Anthropic) do not use a local backend timeout; runs complete when response returns or are cancelled/failed.
+- Enabled auth mode supports Google OIDC, local email/password accounts, or both.
 - Any Google account may authenticate; local users are auto-created on first successful login.
+- Local accounts are created/administered by admins via backend tooling; there is no self-registration flow.
 - Session-backed auth uses MySQL persistence; disabled users lose access on their next request.
+- OIDC-created users default to an invalid local password hash and cannot use local sign-in until an admin sets a password.
+- Self-service password changes require the current password; admins may set/reset any user password.
 - `admin` is a read/manage/delete role, not an implicit query-execution role.
 - `querier` owns query mutation and assistant-send operations.
 - `viewer` can read all queries, download results, and read assistant conversations.
@@ -99,14 +104,15 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 ## Config Requirements
 - Region/profile/S3 output/bucket settings and server settings in JSON config file.
 - Auth settings should be present in config (`auth` block), supporting:
-  - `auth.mode` (`oidc` | `disabled`)
+  - `auth.mode` (`enabled` | `disabled`)
   - `auth.baseURL`
   - `auth.sessionSecret`
   - `auth.sessionCookieName`
   - `auth.sessionMaxAgeMs`
   - `auth.secureCookies`
   - `auth.devUser` (`id`, `email`, `firstName`, `lastName`, `roles`) for local bypass mode
-  - `auth.google` (`issuer`, `clientId`, `clientSecret`)
+  - `auth.google` (`enabled`, `issuer`, `clientId`, `clientSecret`)
+  - `auth.local` (`enabled`, optional `passwordPepperEnvVar`, optional `passwordPepper`)
 - Assistant settings should be present in config (`assistant` block), supporting:
   - provider selection (`assistant.provider`)
   - env-var key resolution
@@ -152,9 +158,9 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 
 ## Current Implementation Snapshot
 - Express-based HTTP server with one handler per endpoint.
-- Google OIDC authentication with MySQL-backed server-side sessions.
+- Enabled auth mode supports Google OIDC and local email/password authentication with MySQL-backed server-side sessions.
 - Configurable auth bypass mode (`auth.mode = disabled`) for local/dev testing using a fixed configured dev user; blocked when `NODE_ENV=production`.
-- MySQL-backed `users`, `user_identities`, `roles`, `user_roles`, and `user_sessions` tables.
+- MySQL-backed `users`, `user_identities`, `roles`, `user_roles`, and `user_sessions` tables, with `users.password_hash` storing salted scrypt password hashes or invalid sentinels for non-local accounts.
 - MySQL-backed `queries` table for query metadata/state, selected Athena `database`, and nullable `created_by_user_id`.
 - MySQL-backed `assistant_sessions` and `assistant_messages` tables for assistant conversation persistence.
 - `assistant_sessions` stores the seeded query-context snapshot used to detect query drift and trigger automatic summarized rollover on the next assistant send.
@@ -172,8 +178,8 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Config-defined assistant tools receive explicit env vars for `QUERY_DIR`, `RESULT_PATH`, `TOOL_WORKSPACE_DIR`, `TOOL_TMP_DIR`, and `TOOL_RUN_DIR`, plus configured credential/env values.
 - Static frontend served from `/` with Monaco SQL editor, SQL format action, submit, polling, and results view.
 - Frontend loads to a dedicated dark-mode login screen when `/auth/me` reports the user is unauthenticated, then shows the main app shell after successful sign-in.
-- Login screen includes placeholder username/password fields plus a `Log In With Google` action for real authentication.
-- Main app top bar shows current-user/role summary plus sign-out control; Google sign-in is only shown on the dedicated login screen.
+- Login screen supports local email/password sign-in and conditionally shows Google sign-in when `auth.google.enabled` is true.
+- Main app top bar shows current-user/role summary plus sign-out control; sign-in options are only shown on the dedicated login screen.
 - Frontend query list supports a `Mine` / `All` scope toggle, where `Mine` requests `GET /query?userId=<current-user-id>` and `All` requests `GET /query`.
 - Frontend keeps the selected query in the browser URL for shareable deep links and restores query selection from `?query=<query-id>` on load/back-forward navigation.
 - Frontend can load an accessible deep-linked query outside the current query-list filter without injecting it into the saved-query sidebar.
@@ -192,6 +198,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Frontend assistant panel renders assistant responses as sanitized Markdown (with plain-text fallback when Markdown libraries are unavailable).
 - Frontend assistant panel shows optimistic user messages immediately on send and an animated typing indicator while assistant runs are active.
 - Assistant response bubbles include a `Use` action that copies selected assistant output into the SQL editor.
+- Frontend sign-out clears the app-owned browser local-storage keys and removes the selected-query URL param before reload.
 - Frontend includes right-side query list populated from `/query`; selecting an item loads SQL and associated state/results.
 - Right-side query list includes delete control for selected query and clears UI state after deletion.
 - Results metadata panel includes `name` alongside Query ID/Status/timestamps.
@@ -200,7 +207,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Query `name` is editable in the metadata panel and is persisted on field blur via `PUT /query/:identifier`.
 - Frontend includes left-side Athena schema tree loaded via `/database/:database/tables` and `/database/:database/:table/schema`.
 - Frontend prefetches table schemas in the background after table list load.
-- Frontend includes editable textarea fallback if Monaco CDN loading fails.
+- Frontend self-hosts Monaco from `/vendor/monaco`; auth/app bootstrap does not wait on Monaco, and editor actions remain disabled until Monaco loads successfully.
 - Frontend includes selected-query cancel control wired to `POST /query/:id/cancel`.
 - Results panel now separates query metadata fields from result payload rendering.
 - Failed queries display Athena failure details (`StateChangeReason`) in the results panel and status messaging.
@@ -212,7 +219,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - Results panel includes full-results download controls with selectable format (`CSV`, `Excel`, `Parquet`) wired to `/query/:id/results/download`.
 - `scripts/exercise.sh` validates base API behavior plus paginated results behavior, supports SQL overrides via env vars (`QUERY1_SQL`, `QUERY2_SQL`, `PAGINATION_SQL`), and accepts authenticated cookie input via `COOKIE_JAR` or `COOKIE_HEADER`.
 - `scripts/exercise-assistant.sh` validates assistant send/status/messages/cancel/compact behavior (including usage reporting/reset), logs request/response pairs to a file (`LOG_FILE`), supports prompt/query overrides (`ASSISTANT_PROMPT`, `QUERY_SQL`; empty `QUERY_SQL` uses `SELECT 1` only for query creation), and accepts authenticated cookie input via `COOKIE_JAR` or `COOKIE_HEADER`.
-- `scripts/admin.js` provides backend admin operations for listing users, listing queries, inspecting unowned queries, assigning query ownership, granting/removing roles by email, and enabling/disabling users, with text output by default and `--json` automation support.
+- `scripts/admin.js` provides backend admin operations for listing users, creating local users, setting/resetting passwords, disabling local sign-in, listing queries, inspecting unowned queries, assigning query ownership, granting/removing roles by email, and enabling/disabling users, with text output by default and `--json` automation support.
 - App construction is factored into `src/app.js` (`buildApp`) so endpoint tests can inject mocked services.
 - Service orchestration is factored into `src/services/appServices.js` (`createServices`) so tests can reuse production service wiring.
 - Endpoint tests are split by endpoint into separate files (`tests/query.create.test.js`, `tests/query.cancel.test.js`).

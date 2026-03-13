@@ -15,6 +15,7 @@ async function createPool(mysqlConfig) {
 
 async function initSchema(pool, options = {}) {
   const defaultAthenaDatabase = options.defaultAthenaDatabase || null;
+  const defaultInvalidPasswordHash = '!OIDC_ONLY';
 
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS users (
@@ -22,6 +23,7 @@ async function initSchema(pool, options = {}) {
       email VARCHAR(255) NULL,
       first_name VARCHAR(255) NULL,
       last_name VARCHAR(255) NULL,
+      password_hash VARCHAR(512) NOT NULL DEFAULT '${defaultInvalidPasswordHash}',
       status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
       created_at DATETIME NOT NULL,
       updated_at DATETIME NOT NULL,
@@ -178,6 +180,33 @@ async function initSchema(pool, options = {}) {
       ADD COLUMN created_by_user_id VARCHAR(36) NULL
     `);
   }
+
+  const [passwordHashColumnRows] = await pool.execute(
+    `
+      SELECT COUNT(*) AS column_count
+      FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'users'
+        AND column_name = 'password_hash'
+    `
+  );
+
+  const hasPasswordHashColumn = Number(passwordHashColumnRows[0]?.column_count || 0) > 0;
+  if (!hasPasswordHashColumn) {
+    await pool.execute(`
+      ALTER TABLE users
+      ADD COLUMN password_hash VARCHAR(512) NOT NULL DEFAULT '${defaultInvalidPasswordHash}'
+    `);
+  }
+
+  await pool.execute(
+    `
+      UPDATE users
+      SET password_hash = ?
+      WHERE password_hash IS NULL OR password_hash = ''
+    `,
+    [defaultInvalidPasswordHash]
+  );
 
   if (defaultAthenaDatabase) {
     await pool.execute(

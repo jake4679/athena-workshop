@@ -1,20 +1,31 @@
 #!/usr/bin/env node
 
+const crypto = require('crypto');
 const { loadConfig } = require('../src/utils/config');
 const { createPool, initSchema } = require('../src/db/mysql');
 const { UserStore } = require('../src/services/userStore');
 const { QueryStore } = require('../src/services/queryStore');
+const {
+  INVALID_PASSWORD_HASH_LOCAL_DISABLED,
+  hashPassword,
+  resolvePasswordPepper
+} = require('../src/auth/passwords');
 
 function parseArgs(argv) {
   const args = {
     positionals: [],
-    json: false
+    json: false,
+    passwordStdin: false
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === '--json') {
       args.json = true;
+      continue;
+    }
+    if (token === '--password-stdin') {
+      args.passwordStdin = true;
       continue;
     }
     if (token.startsWith('--')) {
@@ -47,12 +58,65 @@ function printOutput(value, asJson) {
   console.log(value);
 }
 
+async function readPasswordValue(cliArgs) {
+  if (typeof cliArgs.password === 'string' && cliArgs.password !== '') {
+    return cliArgs.password;
+  }
+
+  if (!cliArgs.passwordStdin) {
+    throw new Error('Password input is required. Use --password or --password-stdin.');
+  }
+
+  const chunks = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  const password = Buffer.concat(chunks).toString('utf8').replace(/\r?\n$/, '');
+  if (!password) {
+    throw new Error('Password input from stdin must not be empty.');
+  }
+  return password;
+}
+
+function parseRoles(cliArgs) {
+  if (typeof cliArgs.roles !== 'string' || cliArgs.roles.trim() === '') {
+    return ['viewer'];
+  }
+
+  const roles = cliArgs.roles
+    .split(',')
+    .map((role) => role.trim())
+    .filter(Boolean);
+
+  return roles.length > 0 ? Array.from(new Set(roles)) : ['viewer'];
+}
+
+async function resolveUser(userStore, cliArgs, commandLabel) {
+  const email = String(cliArgs.email || '').trim();
+  const id = String(cliArgs.id || '').trim();
+
+  let user = null;
+  if (email) {
+    user = await userStore.getByEmail(email);
+  } else if (id) {
+    user = await userStore.getById(id);
+  }
+
+  if (!user) {
+    throw new Error(`${commandLabel} requires a valid --email or --id`);
+  }
+
+  return user;
+}
+
 async function main() {
   const cliArgs = parseArgs(process.argv.slice(2));
   const command = cliArgs.positionals[0];
 
   if (!command) {
-    throw new Error('Missing command. Expected one of: list-users, list-queries, list-unowned-queries, assign-query, grant-role, remove-role, disable-user, enable-user');
+    throw new Error(
+      'Missing command. Expected one of: list-users, list-queries, list-unowned-queries, assign-query, create-user, set-password, reset-password, disable-local-login, grant-role, remove-role, disable-user, enable-user'
+    );
   }
 
   const { config } = loadConfig(process.argv.slice(2));
@@ -60,6 +124,7 @@ async function main() {
   await initSchema(pool, { defaultAthenaDatabase: config.aws?.database || null });
   const userStore = new UserStore(pool);
   const queryStore = new QueryStore(pool);
+  const passwordPepper = resolvePasswordPepper(config.auth || {});
 
   try {
     switch (command) {
@@ -76,6 +141,34 @@ async function main() {
           })),
           cliArgs.json
         );
+        break;
+      }
+      case 'create-user': {
+        const email = String(cliArgs.email || '').trim();
+        if (!email) {
+          throw new Error('create-user requires --email');
+        }
+
+        const existing = await userStore.getByEmail(email);
+        if (existing) {
+          throw new Error(`A user with email ${email} already exists`);
+        }
+
+        const password = await readPasswordValue(cliArgs);
+        const passwordHash = await hashPassword(password, passwordPepper);
+        let created = await userStore.createUser({
+          email,
+          firstName: typeof cliArgs.firstName === 'string' ? cliArgs.firstName.trim() || null : null,
+          lastName: typeof cliArgs.lastName === 'string' ? cliArgs.lastName.trim() || null : null,
+          passwordHash,
+          status: 'ACTIVE'
+        });
+
+        for (const role of parseRoles(cliArgs)) {
+          created = await userStore.assignRole(created.id, role);
+        }
+
+        printOutput(created, cliArgs.json);
         break;
       }
       case 'list-queries': {
@@ -106,6 +199,34 @@ async function main() {
           })),
           cliArgs.json
         );
+        break;
+      }
+      case 'set-password': {
+        const user = await resolveUser(userStore, cliArgs, 'set-password');
+        const password = await readPasswordValue(cliArgs);
+        const passwordHash = await hashPassword(password, passwordPepper);
+        const updated = await userStore.setPasswordHash(user.id, passwordHash);
+        printOutput(updated, cliArgs.json);
+        break;
+      }
+      case 'reset-password': {
+        const user = await resolveUser(userStore, cliArgs, 'reset-password');
+        const generatedPassword = crypto.randomBytes(18).toString('base64url');
+        const passwordHash = await hashPassword(generatedPassword, passwordPepper);
+        const updated = await userStore.setPasswordHash(user.id, passwordHash);
+        printOutput(
+          {
+            user: updated,
+            generatedPassword
+          },
+          cliArgs.json
+        );
+        break;
+      }
+      case 'disable-local-login': {
+        const user = await resolveUser(userStore, cliArgs, 'disable-local-login');
+        const updated = await userStore.setPasswordHash(user.id, INVALID_PASSWORD_HASH_LOCAL_DISABLED);
+        printOutput(updated, cliArgs.json);
         break;
       }
       case 'assign-query': {
@@ -178,17 +299,7 @@ async function main() {
       }
       case 'disable-user':
       case 'enable-user': {
-        const email = String(cliArgs.email || '').trim();
-        const id = String(cliArgs.id || '').trim();
-        let user = null;
-        if (email) {
-          user = await userStore.getByEmail(email);
-        } else if (id) {
-          user = await userStore.getById(id);
-        }
-        if (!user) {
-          throw new Error('disable-user/enable-user requires a valid --email or --id');
-        }
+        const user = await resolveUser(userStore, cliArgs, 'disable-user/enable-user');
         const updated = await userStore.setStatus(user.id, command === 'disable-user' ? 'DISABLED' : 'ACTIVE');
         printOutput(updated, cliArgs.json);
         break;

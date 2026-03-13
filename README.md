@@ -12,11 +12,14 @@ Minimal Node.js HTTP service for submitting and managing AWS Athena queries.
 4. Copy `config.example.json` to `config.json` and set real values.
    - Authentication settings are configured under `auth`.
    - `auth.mode` supports:
-     - `oidc` for normal Google login
+     - `enabled` for session-backed authentication using local accounts, Google OIDC, or both
      - `disabled` for local/dev testing with a fixed configured user
-   - `auth.baseURL` must match the browser-visible server origin used for Google callback handling.
+   - `auth.baseURL` must match the browser-visible server origin used for Google callback handling when `auth.google.enabled = true`.
    - `auth.sessionSecret` signs the session cookie.
-   - `auth.google.clientId` and `auth.google.clientSecret` must match your Google OIDC application.
+   - `auth.google.enabled` toggles Google OIDC sign-in.
+   - `auth.google.clientId` and `auth.google.clientSecret` must match your Google OIDC application when Google sign-in is enabled.
+   - `auth.local.enabled` toggles local email/password sign-in.
+   - `auth.local.passwordPepperEnvVar` / `auth.local.passwordPepper` provide an optional server-side password pepper used with per-password salted scrypt hashes.
    - When `auth.mode = "disabled"`, the app auto-authenticates as `auth.devUser`; this mode is blocked when `NODE_ENV=production`.
    - If you use named AWS CLI profiles or IAM Identity Center (SSO), set `aws.profile` in config to force the Node process to use the same profile.
    - When `aws.profile` is set, server startup clears `AWS_ACCESS_KEY_ID`/`AWS_SESSION_TOKEN` env credentials so stale env tokens cannot override profile-based auth.
@@ -175,7 +178,8 @@ SELECT * FROM queries LIMIT 10;
 ```
 
 ## Endpoints
-- `GET /auth/me` (returns current user profile + roles or unauthenticated state)
+- `GET /auth/me` (returns current user profile + roles or unauthenticated state, plus auth mode and enabled sign-in providers)
+- `POST /auth/login` body: `{ "email": "user@example.com", "password": "..." }` (local email/password sign-in)
 - `GET /auth/login/google` (starts Google OIDC login)
 - `GET /auth/google/callback` (Google OIDC callback)
 - `POST /auth/logout` (destroys current session)
@@ -202,7 +206,7 @@ SELECT * FROM queries LIMIT 10;
 - When a query's stored SQL text or selected database changes, the next `POST /query/:id/assistant/send` automatically rolls over to a new assistant session seeded with the updated query context and a carry-forward summary of prior guidance.
 - `GET /users` (admin only)
 - `GET /users/:id` (self or admin)
-- `PUT /users/:id` body: `{ "email": "new@example.com", "firstName": "Ada", "lastName": "Lovelace" }` for self updates; admins may also send `{ "status": "ACTIVE" | "DISABLED" }`
+- `PUT /users/:id` body: profile fields plus optional password updates. Self-service password changes require `{ "currentPassword": "...", "password": "..." }`; admins may set/reset any user password with `{ "password": "..." }` and may also send `{ "status": "ACTIVE" | "DISABLED" }`
 - `DELETE /users/:id` (admin only; disables the user)
 - Assistant status payload includes cumulative token usage for the current provider session (`usage.promptTokens`, `usage.completionTokens`, `usage.totalTokens`).
 - Assistant provider requests (OpenAI/Anthropic) do not use a local backend timeout; runs complete when model response returns or when cancelled/failed.
@@ -247,8 +251,9 @@ Behavior:
 ## Frontend
 - `GET /` serves a minimal HTML page with:
 - A dedicated dark-mode login screen when `/auth/me` reports the user is unauthenticated
-- The login screen includes placeholder username/password inputs plus a `Log In With Google` social-login action for actual authentication
+- The login screen supports local email/password sign-in and conditionally shows the Google sign-in action when `auth.google.enabled` is true
 - The main app shell after successful sign-in, with current-user/role summary and sign-out control sourced from `/auth/me`
+- Sign-out clears the app-owned browser `localStorage` keys and removes the selected-query URL param before reloading
 - When `auth.mode = "disabled"`, the frontend bypasses the login screen and loads directly into the configured dev user session
 - Refreshed glass-panel UI with responsive card layout and higher-contrast controls
 - General action buttons use a compact size, while sidebar collapse toggles remain larger
@@ -270,7 +275,8 @@ Behavior:
 - Assistant responses are rendered as sanitized Markdown (with plain-text fallback if Markdown libraries fail to load)
 - Assistant panel shows optimistic user messages immediately on send and a live animated typing indicator while assistant run is active
 - Assistant response bubbles include a `Use` action to copy that response into the SQL editor
-- Monaco SQL editor
+- Self-hosted Monaco SQL editor served from `/vendor/monaco`
+- App authentication/bootstrap does not wait for Monaco to load; editor actions remain disabled until Monaco is ready
 - Athena database selector persisted in browser local storage
 - Monaco autocomplete for SQL keywords, table names, and columns
 - Debounced backend syntax validation with inline Monaco error markers
@@ -335,7 +341,7 @@ Environment overrides for assistant exercise:
 `admin` is not an implicit `querier`. If someone should administer and run queries, assign both roles.
 
 ## Auth Bypass Mode
-For local testing without Google login, set:
+For local testing without enabled authentication, set:
 
 ```json
 {
@@ -354,8 +360,8 @@ For local testing without Google login, set:
 
 Behavior:
 - `/auth/me` returns the configured dev user
-- authenticated API requests succeed without Google login
-- Google login is disabled
+- authenticated API requests succeed without sign-in
+- local and Google sign-in are both disabled
 - this mode is rejected when `NODE_ENV=production`
 
 ## Admin CLI
@@ -363,6 +369,10 @@ Use the backend admin helper with the same config file you use for the server:
 
 ```bash
 npm run admin -- list-users
+npm run admin -- create-user --email analyst@example.com --roles viewer --password-stdin
+npm run admin -- set-password --email user@example.com --password-stdin
+npm run admin -- reset-password --email user@example.com
+npm run admin -- disable-local-login --email user@example.com
 npm run admin -- grant-role --email user@example.com --role admin
 npm run admin -- disable-user --email user@example.com
 npm run admin -- list-queries --userId <user-id>
@@ -386,6 +396,7 @@ With Docker:
 
 ```bash
 docker compose exec athena-app node ./scripts/admin.js --config /app/config.json list-users
+docker compose exec athena-app sh -lc 'printf "%s" "new-password" | node ./scripts/admin.js --config /app/config.json set-password --email user@example.com --password-stdin'
 docker compose exec athena-app node ./scripts/admin.js --config /app/config.json grant-role --email user@example.com --role admin
 ```
 

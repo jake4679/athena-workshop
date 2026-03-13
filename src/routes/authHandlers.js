@@ -3,6 +3,9 @@ function getAuthMeHandler() {
     if (!req.auth?.isAuthenticated) {
       return res.status(200).json({
         authenticated: false,
+        mode: req.auth?.mode || 'enabled',
+        provider: null,
+        providers: req.auth?.providers || { google: false, local: false },
         user: null,
         roles: []
       });
@@ -10,7 +13,9 @@ function getAuthMeHandler() {
 
     return res.status(200).json({
       authenticated: true,
-      mode: req.auth.mode || 'oidc',
+      mode: req.auth.mode || 'enabled',
+      provider: req.auth.provider || null,
+      providers: req.auth.providers || { google: false, local: false },
       user: {
         id: req.auth.user.id,
         email: req.auth.user.email,
@@ -25,13 +30,76 @@ function getAuthMeHandler() {
   };
 }
 
+function localLoginHandler({ services }) {
+  return async function localLogin(req, res, next) {
+    try {
+      if (services.authService.mode === 'disabled' || !services.authService.localEnabled) {
+        return res.status(409).json({
+          error: 'AUTH_PROVIDER_DISABLED',
+          message: 'Local sign-in is disabled'
+        });
+      }
+
+      const email = req.body?.email;
+      const password = req.body?.password;
+      const user = await services.authService.loginWithLocalPassword(req, email, password);
+      return res.status(200).json({
+        authenticated: true,
+        mode: 'enabled',
+        provider: 'local',
+        providers: services.authService.availableProviders,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          status: user.status,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt
+        },
+        roles: user.roles || []
+      });
+    } catch (error) {
+      if (error.code === 'INVALID_LOCAL_LOGIN') {
+        return res.status(400).json({
+          error: error.code,
+          message: error.message
+        });
+      }
+
+      if (error.code === 'INVALID_CREDENTIALS') {
+        return res.status(401).json({
+          error: error.code,
+          message: 'Invalid email or password'
+        });
+      }
+
+      if (error.code === 'USER_DISABLED') {
+        return res.status(403).json({
+          error: error.code,
+          message: 'User account is disabled'
+        });
+      }
+
+      if (error.code === 'AUTH_PROVIDER_DISABLED') {
+        return res.status(409).json({
+          error: error.code,
+          message: 'Local sign-in is disabled'
+        });
+      }
+
+      return next(error);
+    }
+  };
+}
+
 function googleLoginHandler({ services }) {
   return async function googleLogin(req, res, next) {
     try {
-      if (services.authService.mode === 'disabled') {
+      if (services.authService.mode === 'disabled' || !services.authService.googleEnabled) {
         return res.status(409).json({
-          error: 'AUTH_DISABLED',
-          message: 'Google login is disabled because auth.mode=disabled'
+          error: 'AUTH_PROVIDER_DISABLED',
+          message: 'Google sign-in is disabled'
         });
       }
       const url = await services.authService.beginGoogleLogin(req);
@@ -45,7 +113,7 @@ function googleLoginHandler({ services }) {
 function googleCallbackHandler({ services, logger }) {
   return async function googleCallback(req, res) {
     try {
-      if (services.authService.mode === 'disabled') {
+      if (services.authService.mode === 'disabled' || !services.authService.googleEnabled) {
         return res.redirect('/');
       }
       await services.authService.handleGoogleCallback(req);
@@ -83,6 +151,7 @@ function logoutHandler({ services }) {
 
 module.exports = {
   getAuthMeHandler,
+  localLoginHandler,
   googleLoginHandler,
   googleCallbackHandler,
   logoutHandler

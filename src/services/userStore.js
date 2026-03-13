@@ -1,4 +1,8 @@
 const { v4: uuidv4 } = require('uuid');
+const {
+  INVALID_PASSWORD_HASH_LOCAL_DISABLED,
+  isPasswordHashUsable
+} = require('../auth/passwords');
 
 function toIso(value) {
   return value ? new Date(value).toISOString() : null;
@@ -40,6 +44,19 @@ function fromIdentityRow(row) {
   };
 }
 
+function fromAuthUserRow(row, roles = []) {
+  const user = fromUserRow(row, roles);
+  if (!user) {
+    return null;
+  }
+
+  return {
+    ...user,
+    passwordHash: row.password_hash || null,
+    hasLocalPassword: isPasswordHashUsable(row.password_hash)
+  };
+}
+
 class UserStore {
   constructor(pool) {
     this.pool = pool;
@@ -75,6 +92,24 @@ class UserStore {
     return fromUserRow(rows[0], roles);
   }
 
+  async getAuthById(id) {
+    const [rows] = await this.pool.execute('SELECT * FROM users WHERE id = ?', [id]);
+    if (!rows[0]) {
+      return null;
+    }
+    const roles = await this.getRolesForUser(id);
+    return fromAuthUserRow(rows[0], roles);
+  }
+
+  async getAuthByEmail(email) {
+    const [rows] = await this.pool.execute('SELECT * FROM users WHERE email = ?', [email]);
+    if (!rows[0]) {
+      return null;
+    }
+    const roles = await this.getRolesForUser(rows[0].id);
+    return fromAuthUserRow(rows[0], roles);
+  }
+
   async getIdentity(provider, providerSubject) {
     const [rows] = await this.pool.execute(
       'SELECT * FROM user_identities WHERE provider = ? AND provider_subject = ?',
@@ -88,13 +123,14 @@ class UserStore {
     const id = record.id || uuidv4();
     await this.pool.execute(
       `INSERT INTO users (
-        id, email, first_name, last_name, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        id, email, first_name, last_name, password_hash, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         record.email || null,
         record.firstName || null,
         record.lastName || null,
+        record.passwordHash || INVALID_PASSWORD_HASH_LOCAL_DISABLED,
         record.status || 'ACTIVE',
         now,
         now
@@ -199,6 +235,18 @@ class UserStore {
 
   async setStatus(id, status) {
     return this.updateUserProfile(id, { status });
+  }
+
+  async setPasswordHash(id, passwordHash) {
+    const now = new Date();
+    await this.pool.execute(
+      `UPDATE users
+      SET password_hash = ?,
+          updated_at = ?
+      WHERE id = ?`,
+      [passwordHash, now, id]
+    );
+    return this.getById(id);
   }
 
   async assignRole(userId, roleName) {
