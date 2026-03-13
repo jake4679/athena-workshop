@@ -119,7 +119,8 @@ Notes:
 
 - The app container expects config at `CONFIG_PATH=/app/config.json`.
 - The app mounts `./results` to `/data/results`, so cached/downloaded query results and query-scoped tool workspaces survive container replacement.
-- The app image includes the checked-in `tools/` subtree, a Python runtime, and AWS CLI so configured Python/S3 tools can run inside Docker.
+- The app image includes AWS CLI for credential diagnostics, but it does not bundle the repository `tools/` subtree or install tool-specific runtimes by default.
+- If you want configured assistant tools to run inside Docker later, add a separate mount/runtime strategy for those tools instead of baking business-specific tooling into the base app image.
 - MySQL stores data in the named volume `athena_mysql_data`, so database contents survive container replacement.
 - MySQL bootstrap scripts under `./docker/mysql/init/` run only when the MySQL data volume is initialized for the first time.
 - The app now retries MySQL initialization on startup using `server.startupRetryCount` and `server.startupRetryDelayMs`.
