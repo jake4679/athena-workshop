@@ -1,5 +1,7 @@
 # Athena Workshop Agent Notes
 
+Before making changes, scan the repository tree for additional `AGENTS.md` files and follow the most specific one for the files you touch. Only update the `AGENTS.md` and `README.md` that apply to the current workspace, and do not copy tool-specific or business-proprietary details from subfolders such as `tools/` back into the top-level project docs.
+
 ## Project Goal
 Build a minimal Node.js HTTP server to manage AWS Athena queries.
 
@@ -118,6 +120,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
   - optional `tools.defaultMaxStderrBytes`
   - `tools.credentialSets` for named child-process env bundles
   - `tools.userSupplied[*]` with `name`, `description`, optional `tags`, `inputSchema`, and `runner`
+  - user-supplied tool descriptions should include any fixed query surface the model must reference directly, such as a required temp view or table name
   - `tools.userSupplied[*].runner` supporting `type = exec`, fixed `command` argv, optional `cwd`, optional `credentialSet`, optional `env`, optional `timeoutMs`, optional `maxStdoutBytes`, optional `maxStderrBytes`, optional `maxCallsPerRun`
 - Provider-specific settings should be present in config (`providers` block), including:
   - `providers.openai` (`model`, `baseURL`)
@@ -218,5 +221,6 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - `scripts/run-test-report.sh` writes timestamped test artifacts to `./results/test-runs/<timestamp>/` for iteration (`npm run test:post-query:report`, `npm run test:cancel-query:report`).
 - Docker support includes a repo-root `Dockerfile`, `docker-compose.yml`, Docker-mounted config templates under `docker/config/`, MySQL bootstrap scripts under `docker/mysql/init/`, and backup/restore helpers (`scripts/docker-backup.sh`, `scripts/docker-restore.sh`).
 - Docker Compose runs separate `athena-app` and `athena-mysql` services, persists MySQL data in the `athena_mysql_data` volume, mounts `./results` into the app container, and mounts host config from `./docker/config/config.json`.
+- The Docker image includes the checked-in `tools/` subtree, a Python runtime, and AWS CLI so configured Python/S3 tools can execute inside the app container.
 - Docker-oriented config uses `mysql.host = athena-mysql`, `mysql.port = 3306`, and `server.resultsDir = /data/results`.
 - Server startup retries MySQL connection and schema initialization using `server.startupRetryCount` and `server.startupRetryDelayMs`, improving resilience while the MySQL container is still initializing.

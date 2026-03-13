@@ -7,3 +7,4 @@ results
 docker/config/config.json
 docker/mysql/backups/*.sql
 docker/mysql/backups/*.tgz
+tools/

@@ -7,4 +7,8 @@ config.json
 docker/config/config.json
 docker/mysql/backups
 tests
+tools/**/.venv
+tools/**/.workspace
+tools/**/__pycache__
+tools/**/tests
 .DS_Store

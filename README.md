@@ -27,6 +27,7 @@ Minimal Node.js HTTP service for submitting and managing AWS Athena queries.
    - Assistant tool runtime settings are configured under `tools`.
    - `tools.credentialSets` defines named environment-variable bundles for child-process tools (for example AWS credentials for an S3 log helper).
    - `tools.userSupplied` defines configured assistant tools with `name`, `description`, `tags`, `inputSchema`, and `runner`.
+   - User-supplied tool descriptions should include any fixed query surface the model must reference directly, such as a required temp view or table name.
    - Configured tools run as child processes with JSON `stdin` / `stdout`, explicit env only, and query-scoped working directories under `server.resultsDir/<query-id>/`.
 5. Install dependencies:
    ```bash
@@ -115,6 +116,7 @@ Notes:
 
 - The app container expects config at `CONFIG_PATH=/app/config.json`.
 - The app mounts `./results` to `/data/results`, so cached/downloaded query results and query-scoped tool workspaces survive container replacement.
+- The app image includes the checked-in `tools/` subtree, a Python runtime, and AWS CLI so configured Python/S3 tools can run inside Docker.
 - MySQL stores data in the named volume `athena_mysql_data`, so database contents survive container replacement.
 - MySQL bootstrap scripts under `./docker/mysql/init/` run only when the MySQL data volume is initialized for the first time.
 - The app now retries MySQL initialization on startup using `server.startupRetryCount` and `server.startupRetryDelayMs`.
