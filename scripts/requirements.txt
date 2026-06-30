@@ -1,0 +1,6 @@
+# Python dependencies for scripts/export_results.py (query result downloads).
+# Used both for local execution (pip install -r scripts/requirements.txt)
+# and inside the Docker image (see Dockerfile).
+pandas==2.2.3
+openpyxl==3.1.5   # required for excel/xlsx export
+pyarrow==18.1.0   # required for parquet export
