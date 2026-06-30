@@ -36,7 +36,12 @@ Minimal Node.js HTTP service for submitting and managing AWS Athena queries.
    ```bash
    npm install
    ```
-6. Start server with config path:
+6. Install Python dependencies for result downloads (CSV/Excel/Parquet export uses `scripts/export_results.py`):
+   ```bash
+   pip install -r scripts/requirements.txt
+   ```
+   Requires Python 3. CSV export works with the standard library alone; Excel and Parquet require the packages in `scripts/requirements.txt` (`pandas`, `openpyxl`, `pyarrow`). The Docker image installs these automatically (see below).
+7. Start server with config path:
    ```bash
    node src/server.js --config ./config.json
    ```
@@ -119,7 +124,7 @@ Notes:
 
 - The app container expects config at `CONFIG_PATH=/app/config.json`.
 - The app mounts `./results` to `/data/results`, so cached/downloaded query results and query-scoped tool workspaces survive container replacement.
-- The app image includes AWS CLI for credential diagnostics, but it does not bundle the repository `tools/` subtree or install tool-specific runtimes by default.
+- The app image includes AWS CLI for credential diagnostics and Python 3 with the result-download dependencies from `scripts/requirements.txt` (`pandas`, `openpyxl`, `pyarrow`), but it does not bundle the repository `tools/` subtree or install tool-specific runtimes by default.
 - If you want configured assistant tools to run inside Docker later, add a separate mount/runtime strategy for those tools instead of baking business-specific tooling into the base app image.
 - MySQL stores data in the named volume `athena_mysql_data`, so database contents survive container replacement.
 - MySQL bootstrap scripts under `./docker/mysql/init/` run only when the MySQL data volume is initialized for the first time.

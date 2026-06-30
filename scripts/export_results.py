@@ -4,8 +4,6 @@ import json
 import sys
 from pathlib import Path
 
-import pandas as pd
-
 
 def normalize_rows(rows, columns):
   if not isinstance(rows, list):
@@ -46,12 +44,16 @@ def write_csv(output_path, columns, rows):
 
 
 def write_excel(output_path, columns, rows):
+  import pandas as pd
+
   records = rows_to_records(rows, columns)
   frame = pd.DataFrame(records, columns=columns)
   frame.to_excel(output_path, index=False, engine="openpyxl")
 
 
 def write_parquet(output_path, columns, rows):
+  import pandas as pd
+
   records = rows_to_records(rows, columns)
   frame = pd.DataFrame(records, columns=columns)
   frame.to_parquet(output_path, index=False)

@@ -228,7 +228,7 @@ Build a minimal Node.js HTTP server to manage AWS Athena queries.
 - `scripts/run-test-report.sh` writes timestamped test artifacts to `./results/test-runs/<timestamp>/` for iteration (`npm run test:post-query:report`, `npm run test:cancel-query:report`).
 - Docker support includes a repo-root `Dockerfile`, `docker-compose.yml`, Docker-mounted config templates under `docker/config/`, MySQL bootstrap scripts under `docker/mysql/init/`, and backup/restore helpers (`scripts/docker-backup.sh`, `scripts/docker-restore.sh`).
 - Docker Compose runs separate `athena-app` and `athena-mysql` services, persists MySQL data in the `athena_mysql_data` volume, mounts `./results` into the app container, and mounts host config from `./docker/config/config.json`.
-- The Docker image includes AWS CLI for credential diagnostics, but it does not bundle the repository `tools/` subtree or install tool-specific runtimes by default.
+- The Docker image includes AWS CLI for credential diagnostics and Python 3 with the result-download dependencies from `scripts/requirements.txt` (`pandas`, `openpyxl`, `pyarrow`), but it does not bundle the repository `tools/` subtree or install tool-specific runtimes by default.
 - Docker deployments that need configured assistant tools should use a separate mount/runtime strategy rather than baking business-specific tooling into the base app image.
 - Docker-oriented config uses `mysql.host = athena-mysql`, `mysql.port = 3306`, and `server.resultsDir = /data/results`.
 - Server startup retries MySQL connection and schema initialization using `server.startupRetryCount` and `server.startupRetryDelayMs`, improving resilience while the MySQL container is still initializing.

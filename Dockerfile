@@ -7,8 +7,13 @@ ENV CONFIG_PATH=/app/config.json
 ENV PORT=3000
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends awscli \
+  && apt-get install -y --no-install-recommends awscli python3-pip \
   && rm -rf /var/lib/apt/lists/*
+
+# Python deps for scripts/export_results.py (result downloads).
+# Same requirements file is used for local execution outside the container.
+COPY scripts/requirements.txt ./scripts/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r ./scripts/requirements.txt
 
 COPY package*.json ./
 RUN npm ci --omit=dev
